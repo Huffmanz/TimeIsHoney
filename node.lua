@@ -138,46 +138,116 @@ function Node:draw()
     
     -- Draw node background
     local r, g, b = self:getColor()
-    love.graphics.setColor(r, g, b)
-    love.graphics.circle("fill", self.x, self.y, self.radius)
-    
-    -- Draw resource node pattern
-    if self.isResourceNode then
-        love.graphics.setColor(1, 1, 1, 0.3)
-        for i = 1, 8 do
-            local angle = (i-1) * math.pi/4
-            local x1 = self.x + math.cos(angle) * self.radius * 0.7
-            local y1 = self.y + math.sin(angle) * self.radius * 0.7
-            local x2 = self.x + math.cos(angle) * self.radius * 1.3
-            local y2 = self.y + math.sin(angle) * self.radius * 1.3
-            love.graphics.line(x1, y1, x2, y2)
-        end
-        
-        -- Draw pollen amount
-        love.graphics.setColor(0, 0, 0, 0.8)
-        local font = love.graphics.getFont()
-        local text = string.format("%.1f", self.resourceAmount)
-        local textWidth = font:getWidth(text)
-        love.graphics.print(text, self.x - textWidth/2, self.y - self.radius - 20)
-    end
     
     -- Draw hive pattern if this is a hive
     if self.isHive then
-        love.graphics.setColor(0.6, 0.6, 0.6, 0.3)
-        for i = 1, 6 do
-            local angle = (i-1) * math.pi/3
-            local x1 = self.x + math.cos(angle) * self.radius * 0.8
-            local y1 = self.y + math.sin(angle) * self.radius * 0.8
-            local x2 = self.x + math.cos(angle) * self.radius * 1.2
-            local y2 = self.y + math.sin(angle) * self.radius * 1.2
-            love.graphics.line(x1, y1, x2, y2)
+        -- Draw outer glow
+        local glowPulse = 0.3 + math.sin(self.pulseTime * 2) * 0.1
+        love.graphics.setColor(r, g, b, glowPulse)
+        -- Draw hexagonal glow
+        local glowPoints = {}
+        for i = 0, 5 do
+            local angle = i * math.pi/3
+            table.insert(glowPoints, self.x + math.cos(angle) * self.radius * 1.3)
+            table.insert(glowPoints, self.y + math.sin(angle) * self.radius * 1.3)
         end
+        love.graphics.polygon("fill", glowPoints)
+        
+        -- Draw main hive body (hexagon)
+        love.graphics.setColor(r, g, b)
+        local hivePoints = {}
+        for i = 0, 5 do
+            local angle = i * math.pi/3
+            table.insert(hivePoints, self.x + math.cos(angle) * self.radius)
+            table.insert(hivePoints, self.y + math.sin(angle) * self.radius)
+        end
+        love.graphics.polygon("fill", hivePoints)
         
         -- Draw "HIVE" text only for player hive
         if self.owner == "player" then
             love.graphics.setColor(0, 0, 0, 0.8)
             local font = love.graphics.getFont()
             local text = "HIVE"
+            local textWidth = font:getWidth(text)
+            love.graphics.print(text, self.x - textWidth/2, self.y - self.radius - 20)
+        end
+    else
+        -- Regular node drawing (flower)
+        -- Draw petals
+        local numPetals = self.isResourceNode and 8 or 5 -- More petals for resource nodes
+        local petalLength = self.radius * 0.8
+        local petalWidth = self.radius * 0.4
+        
+        -- Calculate base rotation for all petals using continuous time
+        local baseRotation = love.timer.getTime() * (self.isResourceNode and 0.3 or 0.5) -- Slower rotation for resource nodes
+        
+        -- Draw petal shadows first
+        love.graphics.setColor(0, 0, 0, 0.1)
+        for i = 1, numPetals do
+            local angle = (i-1) * (2 * math.pi / numPetals) + baseRotation
+            local x = self.x + math.cos(angle) * self.radius * 0.3
+            local y = self.y + math.sin(angle) * self.radius * 0.3
+            
+            -- Draw petal shadow
+            love.graphics.push()
+            love.graphics.translate(x, y)
+            love.graphics.rotate(angle + math.pi/2) -- Rotate to face center
+            love.graphics.ellipse("fill", 0, 0, petalWidth, petalLength)
+            love.graphics.pop()
+        end
+        
+        -- Draw petals
+        for i = 1, numPetals do
+            local angle = (i-1) * (2 * math.pi / numPetals) + baseRotation
+            local x = self.x + math.cos(angle) * self.radius * 0.3
+            local y = self.y + math.sin(angle) * self.radius * 0.3
+            
+            -- Draw petal
+            love.graphics.push()
+            love.graphics.translate(x, y)
+            love.graphics.rotate(angle + math.pi/2) -- Rotate to face center
+            love.graphics.setColor(r, g, b)
+            love.graphics.ellipse("fill", 0, 0, petalWidth, petalLength)
+            
+            -- Draw petal highlight
+            love.graphics.setColor(1, 1, 1, 0.2)
+            love.graphics.ellipse("fill", -petalWidth * 0.2, -petalLength * 0.2, petalWidth * 0.3, petalLength * 0.3)
+            love.graphics.pop()
+        end
+        
+        -- Draw outer center ring
+        love.graphics.setColor(1, 1, 1, 0.9)
+        love.graphics.circle("fill", self.x, self.y, self.radius * 0.5)
+        
+        -- Draw flower center
+        love.graphics.setColor(1, 1, 1, 0.95) -- White center
+        love.graphics.circle("fill", self.x, self.y, self.radius * 0.35)
+        
+        -- Draw center highlight
+        love.graphics.setColor(1, 1, 1, 0.5)
+        love.graphics.circle("fill", self.x - self.radius * 0.1, self.y - self.radius * 0.1, self.radius * 0.15)
+        
+        -- Draw resource node pattern
+        if self.isResourceNode then
+            -- Draw pulsing glow
+            local glowPulse = 0.3 + math.sin(love.timer.getTime() * 3) * 0.2
+            love.graphics.setColor(r, g, b, glowPulse)
+            love.graphics.circle("fill", self.x, self.y, self.radius * 1.2)
+            
+            love.graphics.setColor(1, 1, 1, 0.3)
+            for i = 1, 8 do
+                local angle = (i-1) * math.pi/4 + baseRotation * 0.5 -- Rotate with petals but slower
+                local x1 = self.x + math.cos(angle) * self.radius * 0.7
+                local y1 = self.y + math.sin(angle) * self.radius * 0.7
+                local x2 = self.x + math.cos(angle) * self.radius * 1.3
+                local y2 = self.y + math.sin(angle) * self.radius * 1.3
+                love.graphics.line(x1, y1, x2, y2)
+            end
+            
+            -- Draw pollen amount
+            love.graphics.setColor(0, 0, 0, 0.8)
+            local font = love.graphics.getFont()
+            local text = string.format("%.1f", self.resourceAmount)
             local textWidth = font:getWidth(text)
             love.graphics.print(text, self.x - textWidth/2, self.y - self.radius - 20)
         end
