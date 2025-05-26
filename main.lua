@@ -20,6 +20,11 @@ local gameState = {
         targetY = 0,
         smoothing = 0.1
     },
+    fonts = {
+        large = nil,
+        medium = nil,
+        small = nil
+    },
     mapSections = {
         {
             name = "Starting Area",
@@ -270,6 +275,14 @@ function love.load()
     -- Load assets
     love.graphics.setBackgroundColor(0.9, 0.9, 0.8) -- Light yellow background
     
+    -- Load fonts
+    gameState.fonts.large = love.graphics.newFont("assets/KenneyPixel.ttf", 48)
+    gameState.fonts.medium = love.graphics.newFont("assets/KenneyPixel.ttf", 32)
+    gameState.fonts.small = love.graphics.newFont("assets/KenneyPixel.ttf", 24)
+    
+    -- Set default font
+    love.graphics.setFont(gameState.fonts.medium)
+    
     -- Initialize menu
     Menu.load()
     
@@ -461,10 +474,10 @@ function drawUI()
     -- Draw timer
     local timerText = string.format("%.1f", gameState.remainingTime)
     local oldFont = love.graphics.getFont()
-    love.graphics.setFont(Menu.getFont())
+    love.graphics.setFont(gameState.fonts.large)
     
-    local textWidth = Menu.getFont():getWidth(timerText)
-    local textHeight = Menu.getFont():getHeight()
+    local textWidth = gameState.fonts.large:getWidth(timerText)
+    local textHeight = gameState.fonts.large:getHeight()
     local centerX = love.graphics.getWidth() / 2
     local centerY = 40
     
@@ -487,6 +500,7 @@ function drawUI()
     if gameState.selectedNode then
         local info = string.format("Bees: %d", gameState.selectedNode.beeCount)
         love.graphics.setColor(0, 0, 0)
+        love.graphics.setFont(gameState.fonts.small)
         love.graphics.print(info, 10, 10)
     end
 end

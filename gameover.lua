@@ -2,12 +2,22 @@ local Transition = require("transition")
 
 local GameOver = {
     currentState = "idle", -- idle, showing
-    winner = nil
+    winner = nil,
+    assets = {
+        titleFont = nil,
+        buttonFont = nil
+    }
 }
 
+function GameOver.load()
+    -- Load fonts
+    GameOver.assets.titleFont = love.graphics.newFont("assets/KenneyPixel.ttf", 64)
+    GameOver.assets.buttonFont = love.graphics.newFont("assets/KenneyPixel.ttf", 32)
+end
+
 function GameOver.show(winner)
-    GameOver.winner = winner
     GameOver.currentState = "showing"
+    GameOver.winner = winner
     -- Start transition from game to game over
     Transition.start(0.5, function()
         -- Transition complete
@@ -20,23 +30,35 @@ function GameOver.draw()
         love.graphics.setColor(0, 0, 0, 0.7)
         love.graphics.rectangle("fill", 0, 0, love.graphics.getWidth(), love.graphics.getHeight())
         
-        -- Draw winner text
+        -- Draw game over text
+        love.graphics.setFont(GameOver.assets.titleFont)
+        local gameOverText = "Game Over"
+        local winnerText = GameOver.winner .. " Wins!"
+        local gameOverWidth = GameOver.assets.titleFont:getWidth(gameOverText)
+        local winnerWidth = GameOver.assets.titleFont:getWidth(winnerText)
+        
+        -- Draw text shadows
+        love.graphics.setColor(0, 0, 0, 0.5)
+        love.graphics.print(gameOverText, love.graphics.getWidth()/2 - gameOverWidth/2 + 4, love.graphics.getHeight()/3 - 50 + 4)
+        love.graphics.print(winnerText, love.graphics.getWidth()/2 - winnerWidth/2 + 4, love.graphics.getHeight()/3 + 4)
+        
+        -- Draw main text
         love.graphics.setColor(1, 1, 1)
-        local text = "You Win!"
-        if GameOver.winner ~= "player" then
-            text = "Enemy " .. GameOver.winner:sub(6) .. " Wins!"
-        end
-        local font = love.graphics.getFont()
-        local textWidth = font:getWidth(text)
-        local textHeight = font:getHeight()
+        love.graphics.print(gameOverText, love.graphics.getWidth()/2 - gameOverWidth/2, love.graphics.getHeight()/3 - 50)
+        love.graphics.print(winnerText, love.graphics.getWidth()/2 - winnerWidth/2, love.graphics.getHeight()/3)
         
-        love.graphics.print(text, 
-            love.graphics.getWidth()/2 - textWidth/2,
-            love.graphics.getHeight()/2 - textHeight/2)
+        -- Draw click to restart
+        love.graphics.setFont(GameOver.assets.buttonFont)
+        local restartText = "Click to Restart"
+        local restartWidth = GameOver.assets.buttonFont:getWidth(restartText)
         
-        love.graphics.print("Click to play again",
-            love.graphics.getWidth()/2 - font:getWidth("Click to play again")/2,
-            love.graphics.getHeight()/2 + textHeight)
+        -- Draw restart text shadow
+        love.graphics.setColor(0, 0, 0, 0.5)
+        love.graphics.print(restartText, love.graphics.getWidth()/2 - restartWidth/2 + 2, love.graphics.getHeight()*2/3 + 2)
+        
+        -- Draw restart text
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.print(restartText, love.graphics.getWidth()/2 - restartWidth/2, love.graphics.getHeight()*2/3)
     end
     
     -- Draw transition overlay
