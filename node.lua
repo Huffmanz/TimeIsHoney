@@ -52,13 +52,6 @@ function Node.new(x, y, owner, beeCount, gameState)
         self.maxBees = 15 + math.random(10) -- Random max bees between 15 and 25
     end
     
-    -- Debug print for new nodes
-    if self.isHive then
-        print("Created hive at", x, y, "with owner", owner)
-    elseif self.isResourceNode then
-        print("Created resource node at", x, y, "with", self.resourceAmount, "pollen")
-    end
-    
     return self
 end
 
@@ -226,28 +219,28 @@ function Node:draw()
         -- Draw center highlight
         love.graphics.setColor(1, 1, 1, 0.5)
         love.graphics.circle("fill", self.x - self.radius * 0.1, self.y - self.radius * 0.1, self.radius * 0.15)
-        
-        -- Draw resource node pattern
-        if self.isResourceNode then
+    
+    -- Draw resource node pattern
+    if self.isResourceNode then
             -- Draw pulsing glow
             local glowPulse = 0.3 + math.sin(love.timer.getTime() * 3) * 0.2
             love.graphics.setColor(r, g, b, glowPulse)
             love.graphics.circle("fill", self.x, self.y, self.radius * 1.2)
             
-            love.graphics.setColor(1, 1, 1, 0.3)
-            for i = 1, 8 do
+        love.graphics.setColor(1, 1, 1, 0.3)
+        for i = 1, 8 do
                 local angle = (i-1) * math.pi/4 + baseRotation * 0.5 -- Rotate with petals but slower
-                local x1 = self.x + math.cos(angle) * self.radius * 0.7
-                local y1 = self.y + math.sin(angle) * self.radius * 0.7
-                local x2 = self.x + math.cos(angle) * self.radius * 1.3
-                local y2 = self.y + math.sin(angle) * self.radius * 1.3
-                love.graphics.line(x1, y1, x2, y2)
-            end
-            
-            -- Draw pollen amount
-            love.graphics.setColor(0, 0, 0, 0.8)
-            local font = love.graphics.getFont()
-            local text = string.format("%.1f", self.resourceAmount)
+            local x1 = self.x + math.cos(angle) * self.radius * 0.7
+            local y1 = self.y + math.sin(angle) * self.radius * 0.7
+            local x2 = self.x + math.cos(angle) * self.radius * 1.3
+            local y2 = self.y + math.sin(angle) * self.radius * 1.3
+            love.graphics.line(x1, y1, x2, y2)
+        end
+        
+        -- Draw pollen amount
+        love.graphics.setColor(0, 0, 0, 0.8)
+        local font = love.graphics.getFont()
+        local text = string.format("%.1f", self.resourceAmount)
             local textWidth = font:getWidth(text)
             love.graphics.print(text, self.x - textWidth/2, self.y - self.radius - 20)
         end

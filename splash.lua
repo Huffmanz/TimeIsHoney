@@ -53,9 +53,7 @@ function Splash.update(dt)
     if Splash.currentState == "showing" then
         Splash.time = Splash.time + dt
         if Splash.time >= Splash.duration and not Transition.isTransitioning() then
-            print("Starting transition") -- Debug print
             Transition.start(0.5, function()
-                print("Transition complete") -- Debug print
                 Splash.currentState = "done"
             end)
         end
@@ -66,7 +64,6 @@ function Splash.update(dt)
     
     -- Return true when we're done
     if Splash.currentState == "done" then
-        print("Splash is done") -- Debug print
         return true
     end
     return false

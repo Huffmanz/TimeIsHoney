@@ -6,24 +6,26 @@ function Bee.new(startX, startY, targetX, targetY, beeCount, gameState)
     local sourceNode = nil
     local targetNode = nil
     
-    for _, node in ipairs(gameState.nodes) do
-        if node.x == startX and node.y == startY then
-            sourceNode = node
-        end
-        if node.x == targetX and node.y == targetY then
-            targetNode = node
-        end
-        if sourceNode and targetNode then
-            break
-        end
-    end
+    -- Check if this is a menu bee (gameState has empty nodes table)
+    local isMenuBee = #gameState.nodes == 0
     
-    -- If either node is not found or is in a locked area, return nil
-    if not sourceNode or not targetNode or 
-       not table.contains(gameState.unlockedAreas, sourceNode.section) or 
-       not table.contains(gameState.unlockedAreas, targetNode.section) then
-        print("Cannot create bee - source or target node is in locked area or not found")
-        return nil
+    if not isMenuBee then
+        for _, node in ipairs(gameState.nodes) do
+            if node.x == startX and node.y == startY then
+                sourceNode = node
+            end
+            if node.x == targetX and node.y == targetY then
+                targetNode = node
+            end
+            if sourceNode and targetNode then
+                break
+            end
+        end
+        
+        -- Check if source and target nodes are in unlocked areas
+        if not isNodeInUnlockedArea(sourceNode) or not isNodeInUnlockedArea(targetNode) then
+            return nil
+        end
     end
     
     local self = setmetatable({}, Bee)
@@ -33,8 +35,9 @@ function Bee.new(startX, startY, targetX, targetY, beeCount, gameState)
     self.targetY = targetY
     self.beeCount = beeCount
     self.speed = 200
-    self.owner = sourceNode.owner -- Set owner based on source node
+    self.owner = isMenuBee and "player" or sourceNode.owner -- Set owner based on source node or default to player for menu
     self.gameState = gameState
+    self.isMenuBee = isMenuBee
     
     -- Calculate initial angle with small random deviation
     local baseAngle = math.atan2(targetY - startY, targetX - startX)
@@ -44,8 +47,10 @@ function Bee.new(startX, startY, targetX, targetY, beeCount, gameState)
     self.targetAngle = self.angle
     self.arrived = false
     
-    -- Store target node
-    self.targetNode = targetNode
+    -- Store target node if not a menu bee
+    if not isMenuBee then
+        self.targetNode = targetNode
+    end
     
     -- Buzzing motion parameters
     self.buzzTime = 0
@@ -127,8 +132,22 @@ function Bee:update(dt)
             self.x = self.targetX
             self.y = self.targetY
             self.arrived = true
-            self:arriveAtTarget()
-            return true -- Remove bee after arrival
+            if not self.isMenuBee then
+                self:arriveAtTarget()
+                return true -- Remove game bee after arrival
+            else
+                -- For menu bees, pick a new target and continue
+                self.targetX = love.math.random(0, love.graphics.getWidth())
+                self.targetY = love.math.random(0, love.graphics.getHeight())
+                self.arrived = false
+                
+                -- Calculate new angle with small random deviation
+                local baseAngle = math.atan2(self.targetY - self.y, self.targetX - self.x)
+                local randomAngle = (love.math.random() - 0.5) * (math.pi / 12)
+                self.angle = baseAngle + randomAngle
+                self.currentAngle = self.angle
+                self.targetAngle = self.angle
+            end
         else
             -- Calculate direct angle to target
             local targetAngle = math.atan2(dy, dx)

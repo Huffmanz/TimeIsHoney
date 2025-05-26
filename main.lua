@@ -109,8 +109,6 @@ function initializeFogParticles()
             maxY = math.max(maxY, node.y)
         end
         
-        print("Checking section", sectionIndex, "boundaries:", minX, maxX, minY, maxY)
-        
         -- Track which edges should have fog
         local keepTopEdge = true
         local keepBottomEdge = true
@@ -138,8 +136,6 @@ function initializeFogParticles()
                     unlockedMaxY = math.max(unlockedMaxY, node.y)
                 end
                 
-                print("  Comparing with unlocked section", unlockedArea, "boundaries:", unlockedMinX, unlockedMaxX, unlockedMinY, unlockedMaxY)
-                
                 -- Check if sections share an edge
                 -- They share an edge if:
                 -- 1. Their X ranges overlap AND one's top/bottom edge aligns with the other's
@@ -153,9 +149,6 @@ function initializeFogParticles()
                 local bottomAligned = math.abs(maxY - unlockedMinY) <= tolerance
                 local leftAligned = math.abs(minX - unlockedMaxX) <= tolerance
                 local rightAligned = math.abs(maxX - unlockedMinX) <= tolerance
-                
-                print("  Overlap:", xOverlap, yOverlap)
-                print("  Alignment:", topAligned, bottomAligned, leftAligned, rightAligned)
                 
                 -- Update which edges should keep fog
                 if xOverlap then
@@ -289,6 +282,9 @@ function love.load()
     
     -- Initialize menu
     Menu.load()
+    
+    -- Initialize game over screen
+    GameOver.load()
     
     -- Initialize game
     initializeGame()
@@ -424,7 +420,6 @@ end
 function love.update(dt)
     if gameState.currentState == "splash" then
         if Splash.update(dt) then
-            print("Switching from splash to menu") -- Debug print
             gameState.currentState = "menu"
         end
     elseif gameState.currentState == "menu" then
@@ -639,60 +634,60 @@ function drawEffects()
 end
 
 function updateGameElements(dt)
-    -- Update camera position with smoothing
-    gameState.camera.x = gameState.camera.x + (gameState.camera.targetX - gameState.camera.x) * gameState.camera.smoothing
-    gameState.camera.y = gameState.camera.y + (gameState.camera.targetY - gameState.camera.y) * gameState.camera.smoothing
-    
-    -- Update fog particles
-    for _, fog in ipairs(gameState.fogParticles) do
-        fog.time = fog.time + dt
+        -- Update camera position with smoothing
+        gameState.camera.x = gameState.camera.x + (gameState.camera.targetX - gameState.camera.x) * gameState.camera.smoothing
+        gameState.camera.y = gameState.camera.y + (gameState.camera.targetY - gameState.camera.y) * gameState.camera.smoothing
+        
+        -- Update fog particles
+        for _, fog in ipairs(gameState.fogParticles) do
+            fog.time = fog.time + dt
         for _, point in ipairs(fog.points) do
-            local phase = point.phase + fog.time * 2
-            point.alpha = 0.3 + math.sin(phase) * 0.2
-            point.rotation = point.rotation + point.rotationSpeed * dt
+                local phase = point.phase + fog.time * 2
+                point.alpha = 0.3 + math.sin(phase) * 0.2
+                point.rotation = point.rotation + point.rotationSpeed * dt
             point.scale = 1 + math.sin(phase * 0.5) * 0.8
+            end
         end
-    end
-    
-    -- Handle camera panning with arrow keys
-    local panSpeed = 500 * dt
-    if love.keyboard.isDown('left') then
-        gameState.camera.targetX = gameState.camera.targetX - panSpeed
-    end
-    if love.keyboard.isDown('right') then
-        gameState.camera.targetX = gameState.camera.targetX + panSpeed
-    end
-    if love.keyboard.isDown('up') then
-        gameState.camera.targetY = gameState.camera.targetY - panSpeed
-    end
-    if love.keyboard.isDown('down') then
-        gameState.camera.targetY = gameState.camera.targetY + panSpeed
-    end
-    
-    -- Update game timer
-    gameState.remainingTime = gameState.remainingTime - dt
-    if gameState.remainingTime <= 0 then
-        endGame("time")
-    end
-    
-    -- Update nodes in unlocked areas
-    for _, node in ipairs(nodes) do
-        if isNodeInUnlockedArea(node) then
-            node:update(dt)
+        
+        -- Handle camera panning with arrow keys
+        local panSpeed = 500 * dt
+        if love.keyboard.isDown('left') then
+            gameState.camera.targetX = gameState.camera.targetX - panSpeed
         end
-    end
-    
-    -- Update link bonuses
-    for i = #gameState.linkBonuses, 1, -1 do
-        local bonus = gameState.linkBonuses[i]
-        local elapsed = love.timer.getTime() - bonus.startTime
-        if elapsed >= bonus.duration then
-            table.remove(gameState.linkBonuses, i)
+        if love.keyboard.isDown('right') then
+            gameState.camera.targetX = gameState.camera.targetX + panSpeed
         end
-    end
-    
+        if love.keyboard.isDown('up') then
+            gameState.camera.targetY = gameState.camera.targetY - panSpeed
+        end
+        if love.keyboard.isDown('down') then
+            gameState.camera.targetY = gameState.camera.targetY + panSpeed
+        end
+        
+        -- Update game timer
+        gameState.remainingTime = gameState.remainingTime - dt
+        if gameState.remainingTime <= 0 then
+            endGame("time")
+        end
+        
+        -- Update nodes in unlocked areas
+        for _, node in ipairs(nodes) do
+            if isNodeInUnlockedArea(node) then
+                node:update(dt)
+            end
+        end
+        
+        -- Update link bonuses
+        for i = #gameState.linkBonuses, 1, -1 do
+            local bonus = gameState.linkBonuses[i]
+            local elapsed = love.timer.getTime() - bonus.startTime
+            if elapsed >= bonus.duration then
+                table.remove(gameState.linkBonuses, i)
+            end
+        end
+        
     -- Update paths and spawn bees
-    if gameState.gameStarted then
+        if gameState.gameStarted then
         updatePaths(dt)
     end
     
@@ -713,167 +708,159 @@ function updateGameElements(dt)
 end
 
 function updatePaths(dt)
-    for _, path in ipairs(gameState.paths) do
-        if path.source.beeCount > 1 and isNodeInUnlockedArea(path.source) then
-            path.lastSpawnTime = path.lastSpawnTime + dt
-            
-            -- Check for link bonus
-            local spawnMultiplier = 1.0
-            for _, bonus in ipairs(gameState.linkBonuses) do
-                if bonus.node == path.source then
-                    spawnMultiplier = bonus.multiplier
-                    break
-                end
-            end
-            
+            for _, path in ipairs(gameState.paths) do
+                if path.source.beeCount > 1 and isNodeInUnlockedArea(path.source) then
+                    path.lastSpawnTime = path.lastSpawnTime + dt
+                    
+                    -- Check for link bonus
+                    local spawnMultiplier = 1.0
+                    for _, bonus in ipairs(gameState.linkBonuses) do
+                        if bonus.node == path.source then
+                            spawnMultiplier = bonus.multiplier
+                            break
+                        end
+                    end
+                    
             -- Apply node's spawn rate
-            local effectiveDelay = path.spawnDelay * (1 / (spawnMultiplier * path.source.spawnRate))
-            
-            if path.lastSpawnTime >= effectiveDelay then
-                path.lastSpawnTime = 0
-                path.source.beeCount = path.source.beeCount - 1
-                local newBee = Bee.new(
-                    path.source.x,
-                    path.source.y,
-                    path.target.x,
-                    path.target.y,
-                    path.source.owner,
-                    gameState
-                )
-                if newBee then
-                    table.insert(gameState.bees, newBee)
+                    local effectiveDelay = path.spawnDelay * (1 / (spawnMultiplier * path.source.spawnRate))
+                    
+                    if path.lastSpawnTime >= effectiveDelay then
+                        path.lastSpawnTime = 0
+                        path.source.beeCount = path.source.beeCount - 1
+                        local newBee = Bee.new(
+                            path.source.x,
+                            path.source.y,
+                            path.target.x,
+                            path.target.y,
+                            path.source.owner,
+                            gameState
+                        )
+                        if newBee then
+                            table.insert(gameState.bees, newBee)
+                        end
+                    end
                 end
             end
         end
-    end
-end
-
-function updateEnemyAI(dt)
-    for i = #gameState.enemyHives, 1, -1 do
-        local hive = gameState.enemyHives[i]
         
-        if hive.owner:sub(1, 5) ~= "enemy" then
-            table.remove(gameState.enemyHives, i)
-        elseif isNodeInUnlockedArea(hive) and hive.beeCount > 1 and hive.owner == "enemy" .. tostring(hive.section) then
-            gameState.enemyTimers[hive].lastSpawnTime = gameState.enemyTimers[hive].lastSpawnTime + dt
+function updateEnemyAI(dt)
+        for i = #gameState.enemyHives, 1, -1 do
+            local hive = gameState.enemyHives[i]
             
-            if gameState.enemyTimers[hive].lastSpawnTime >= gameState.enemyTimers[hive].spawnDelay then
-                gameState.enemyTimers[hive].lastSpawnTime = 0
+            if hive.owner:sub(1, 5) ~= "enemy" then
+                table.remove(gameState.enemyHives, i)
+            elseif isNodeInUnlockedArea(hive) and hive.beeCount > 1 and hive.owner == "enemy" .. tostring(hive.section) then
+                gameState.enemyTimers[hive].lastSpawnTime = gameState.enemyTimers[hive].lastSpawnTime + dt
                 
+                if gameState.enemyTimers[hive].lastSpawnTime >= gameState.enemyTimers[hive].spawnDelay then
+                    gameState.enemyTimers[hive].lastSpawnTime = 0
+                    
                 -- Find nearest valid target
                 local nearestNode = findNearestEnemyTarget(hive)
                 
-                if nearestNode then
+                    if nearestNode then
                     createEnemyPath(hive, nearestNode)
-                end
-            end
-        end
-    end
-end
-
+                            end
+                        end
+                                    end
+                                end
+                            end
+                            
 function updateBees(dt)
-    for i = #gameState.bees, 1, -1 do
-        if gameState.bees[i]:update(dt) then
-            local targetNode = gameState.bees[i].targetNode
-            if targetNode then
+        for i = #gameState.bees, 1, -1 do
+            if gameState.bees[i]:update(dt) then
+                local targetNode = gameState.bees[i].targetNode
+                if targetNode then                    
                 handleBeeArrival(targetNode, gameState.bees[i])
-            end
-            table.remove(gameState.bees, i)
+                end
+                table.remove(gameState.bees, i)
         end
-    end
-end
-
+            end
+        end
+        
 function updateResourceNodes(dt)
-    for _, node in ipairs(nodes) do
-        if node.isResourceNode and node.owner ~= "neutral" then
+        for _, node in ipairs(nodes) do
+            if node.isResourceNode and node.owner ~= "neutral" then
             node.resourceAmount = node.resourceAmount + (dt * 0.5)
-            
-            if node.resourceAmount >= 5 then
-                node.resourceAmount = node.resourceAmount - 5
-                if node.beeCount < node.maxBees then
-                    node.beeCount = node.beeCount + 1
+                
+                if node.resourceAmount >= 5 then
+                    node.resourceAmount = node.resourceAmount - 5
+                    if node.beeCount < node.maxBees then
+                        node.beeCount = node.beeCount + 1
+                end
+                    end
                 end
             end
         end
-    end
-end
-
+        
 function updateEffects(dt)
     -- Update screen shake
     if gameState.screenShake.time < gameState.screenShake.duration then
         gameState.screenShake.time = gameState.screenShake.time + dt
         gameState.screenShake.intensity = gameState.screenShake.intensity * (1 - dt)
     end
-    
-    -- Update capture effects
-    for i = #gameState.captureEffects, 1, -1 do
-        local effect = gameState.captureEffects[i]
-        effect.time = effect.time + dt
-        effect.radius = 30 + (effect.maxRadius - 30) * (effect.time / effect.duration)
-        effect.alpha = 1 - (effect.time / effect.duration)
         
-        if effect.time >= effect.duration then
-            table.remove(gameState.captureEffects, i)
-        end
-    end
-    
-    -- Update bee trail effects
-    for i = #gameState.beeTrailEffects, 1, -1 do
-        local effect = gameState.beeTrailEffects[i]
-        effect.time = effect.time + dt
-        effect.progress = effect.time / effect.duration
-        
-        if effect.time >= effect.duration then
-            table.remove(gameState.beeTrailEffects, i)
-        end
-    end
-    
-    -- Update path effects
-    for i = #gameState.pathEffects, 1, -1 do
-        local effect = gameState.pathEffects[i]
-        effect.time = effect.time + dt
-        effect.progress = effect.time / effect.duration
-        
-        for j = 1, effect.segments do
-            effect.segmentProgress[j] = math.min(1, effect.progress * 2 - (j-1) * 0.1)
+        -- Update capture effects
+        for i = #gameState.captureEffects, 1, -1 do
+            local effect = gameState.captureEffects[i]
+            effect.time = effect.time + dt
+            effect.radius = 30 + (effect.maxRadius - 30) * (effect.time / effect.duration)
+            effect.alpha = 1 - (effect.time / effect.duration)
+            
+            if effect.time >= effect.duration then
+                table.remove(gameState.captureEffects, i)
+            end
         end
         
-        if effect.time >= effect.duration then
-            table.remove(gameState.pathEffects, i)
+        -- Update bee trail effects
+        for i = #gameState.beeTrailEffects, 1, -1 do
+            local effect = gameState.beeTrailEffects[i]
+            effect.time = effect.time + dt
+            effect.progress = effect.time / effect.duration
+            
+            if effect.time >= effect.duration then
+                table.remove(gameState.beeTrailEffects, i)
+            end
         end
-    end
-    
-    -- Update capture particles
-    for i = #gameState.captureParticles, 1, -1 do
-        local particle = gameState.captureParticles[i]
-        particle.time = particle.time + dt
-        particle.x = particle.x + particle.vx * dt
-        particle.y = particle.y + particle.vy * dt
-        particle.alpha = 1 - (particle.time / particle.duration)
         
-        if particle.time >= particle.duration then
-            table.remove(gameState.captureParticles, i)
+        -- Update path effects
+        for i = #gameState.pathEffects, 1, -1 do
+            local effect = gameState.pathEffects[i]
+            effect.time = effect.time + dt
+            effect.progress = effect.time / effect.duration
+            
+            for j = 1, effect.segments do
+                effect.segmentProgress[j] = math.min(1, effect.progress * 2 - (j-1) * 0.1)
+            end
+            
+            if effect.time >= effect.duration then
+                table.remove(gameState.pathEffects, i)
+            end
+        end
+        
+        -- Update capture particles
+        for i = #gameState.captureParticles, 1, -1 do
+            local particle = gameState.captureParticles[i]
+            particle.time = particle.time + dt
+            particle.x = particle.x + particle.vx * dt
+            particle.y = particle.y + particle.vy * dt
+            particle.alpha = 1 - (particle.time / particle.duration)
+            
+            if particle.time >= particle.duration then
+                table.remove(gameState.captureParticles, i)
         end
     end
 end
 
 function love.mousepressed(x, y, button)
-    if button == 1 then -- Left click
-        if gameState.currentState == "menu" or Transition.isTransitioning() then
-            if Menu.handleClick(x, y, button) then
-                -- Don't change gameState.currentState here, let Menu.update handle it
-            end
-        elseif gameState.currentState == "playing" then
-            if GameOver.isShowing() then
-                if GameOver.handleClick(x, y, button) then
-                    -- Game will be restarted in update
-                end
-            else
-                -- Convert mouse position to world coordinates
-                local worldX = (x - love.graphics.getWidth()/2) / gameState.camera.scale + gameState.camera.x
-                local worldY = (y - love.graphics.getHeight()/2) / gameState.camera.scale + gameState.camera.y
-                handleNodeClick(worldX, worldY)
-            end
+    if gameState.currentState == "menu" then
+        if Menu.handleClick(x, y, button) then
+            gameState.currentState = "playing"
+            initializeGame()
+        end
+    elseif gameState.currentState == "playing" then
+        if not GameOver.isShowing() then
+            handleGameClick(x, y, button)
         end
     end
 end
@@ -935,7 +922,6 @@ function handleNodeClick(x, y)
                     -- Set game as started when first connection is made
                     if not gameState.gameStarted then
                         gameState.gameStarted = true
-                        print("Game started - first connection made")
                     end
                 end
             end
@@ -1602,5 +1588,14 @@ function handleBeeArrival(targetNode, bee)
     else
         -- If same owner, just add the bee
         targetNode.beeCount = targetNode.beeCount + 1
+    end
+end
+
+function handleGameClick(x, y, button)
+    if button == 1 then -- Left click
+        -- Convert mouse position to world coordinates
+        local worldX = (x - love.graphics.getWidth()/2) / gameState.camera.scale + gameState.camera.x
+        local worldY = (y - love.graphics.getHeight()/2) / gameState.camera.scale + gameState.camera.y
+        handleNodeClick(worldX, worldY)
     end
 end
