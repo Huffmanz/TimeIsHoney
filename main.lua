@@ -388,6 +388,9 @@ function initializeGame()
     for i, hive in ipairs(gameState.enemyHives) do
         print("Enemy", i, "hive bees:", hive.beeCount)
     end
+
+    -- Initialize fog particles
+    initializeFogParticles()
 end
 
 function love.update(dt)
@@ -1121,6 +1124,11 @@ end
 
 function endGame(reason)
     gameState.gameOver = true
+    -- Reset screen shake
+    gameState.screenShake.intensity = 0
+    gameState.screenShake.duration = 0
+    gameState.screenShake.time = 0
+    
     if reason == "time" then
         -- Count nodes to determine winner
         local playerNodes = 0
