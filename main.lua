@@ -71,12 +71,13 @@ local gameState = {
 -- Load required modules
 local Node = require("node")
 local Bee = require("bee")
+local Menu = require("menu")
+local Transition = require("transition")
+local GameOver = require("gameover")
 
 -- Initialize game objects
 local nodes = {}
 local bees = {}
-local timerFont
-local menuIcon
 
 function initializeFogParticles()
     -- Create new fog particles array
@@ -268,10 +269,9 @@ end
 function love.load()
     -- Load assets
     love.graphics.setBackgroundColor(0.9, 0.9, 0.8) -- Light yellow background
-    menuIcon = love.graphics.newImage("assets/icon.png")
     
-    -- Create larger font for timer
-    timerFont = love.graphics.newFont(48)
+    -- Initialize menu
+    Menu.load()
     
     -- Initialize game
     initializeGame()
@@ -297,6 +297,18 @@ function initializeGame()
     gameState.remainingTime = gameState.gameTime
     gameState.paths = {} -- Clear paths
     gameState.unlockedAreas = {1} -- Reset to only first area
+    gameState.gameStarted = false -- Reset game started flag
+    gameState.captureEffects = {} -- Clear effects
+    gameState.beeTrailEffects = {}
+    gameState.pathEffects = {}
+    gameState.captureParticles = {}
+    gameState.linkBonuses = {} -- Clear link bonuses
+    
+    -- Reset camera position
+    gameState.camera.x = 0
+    gameState.camera.y = 0
+    gameState.camera.targetX = 0
+    gameState.camera.targetY = 0
     
     -- Game constants
     gameState.SPAWN_DELAY = 0.5 -- Reduced from 2.0 to 0.5 seconds for faster initial spawning
@@ -382,422 +394,39 @@ function initializeGame()
         }
     end
     
-    -- Debug print initial state
-    print("Game initialized:")
-    print("Player hive bees:", gameState.playerHive.beeCount)
-    for i, hive in ipairs(gameState.enemyHives) do
-        print("Enemy", i, "hive bees:", hive.beeCount)
-    end
-
     -- Initialize fog particles
     initializeFogParticles()
+    
+    -- Center camera on starting area
+    gameState.camera.targetX = gameState.mapSections[1].startX + (gameState.mapSections[1].gridSize * gameState.mapSections[1].spacing) / 2
+    gameState.camera.targetY = gameState.mapSections[1].startY + (gameState.mapSections[1].gridSize * gameState.mapSections[1].spacing) / 2
+    gameState.camera.x = gameState.camera.targetX
+    gameState.camera.y = gameState.camera.targetY
 end
 
 function love.update(dt)
     if gameState.currentState == "menu" then
         -- Menu state updates
-    elseif gameState.currentState == "playing" and not gameState.gameOver then
-        -- Update camera position with smoothing
-        gameState.camera.x = gameState.camera.x + (gameState.camera.targetX - gameState.camera.x) * gameState.camera.smoothing
-        gameState.camera.y = gameState.camera.y + (gameState.camera.targetY - gameState.camera.y) * gameState.camera.smoothing
-        
-        -- Update fog particles
-        for _, fog in ipairs(gameState.fogParticles) do
-            fog.time = fog.time + dt
-            -- Update alpha and size values for each point
-            for i, point in ipairs(fog.points) do
-                -- Create a wave effect by offsetting each point's phase
-                local phase = point.phase + fog.time * 2
-                -- Use different alpha ranges for locked vs unlocked sections
-
-                point.alpha = 0.3 + math.sin(phase) * 0.2
-                
-                -- Update rotation
-                point.rotation = point.rotation + point.rotationSpeed * dt
-                
-                -- Update scale
-                point.scale = 1 + math.sin(phase * 0.5) * 0.8 -- Increased scale range from 0.7 to 0.8
+        if Menu.update(dt) then
+            gameState.currentState = "playing"
+        end
+    elseif gameState.currentState == "playing" then
+        if GameOver.isShowing() then
+            if GameOver.update(dt) then
+                -- Reset game state and initialize new game
+                gameState.currentState = "playing"
+                initializeGame()
             end
-        end
-        
-        -- Handle camera panning with arrow keys
-        local panSpeed = 500 * dt
-        if love.keyboard.isDown('left') then
-            gameState.camera.targetX = gameState.camera.targetX - panSpeed
-        end
-        if love.keyboard.isDown('right') then
-            gameState.camera.targetX = gameState.camera.targetX + panSpeed
-        end
-        if love.keyboard.isDown('up') then
-            gameState.camera.targetY = gameState.camera.targetY - panSpeed
-        end
-        if love.keyboard.isDown('down') then
-            gameState.camera.targetY = gameState.camera.targetY + panSpeed
-        end
-        
-        -- Update game timer
-        gameState.remainingTime = gameState.remainingTime - dt
-        if gameState.remainingTime <= 0 then
-            endGame("time")
-        end
-        
-        -- Update nodes in unlocked areas
-        for _, node in ipairs(nodes) do
-            if isNodeInUnlockedArea(node) then
-                node:update(dt)
-            end
-        end
-        
-        -- Update link bonuses
-        for i = #gameState.linkBonuses, 1, -1 do
-            local bonus = gameState.linkBonuses[i]
-            local elapsed = love.timer.getTime() - bonus.startTime
-            if elapsed >= bonus.duration then
-                table.remove(gameState.linkBonuses, i)
-            end
-        end
-        
-        -- Update paths and spawn bees only if game has started
-        if gameState.gameStarted then
-            for _, path in ipairs(gameState.paths) do
-                -- Handle both player and enemy paths
-                if path.source.beeCount > 1 and isNodeInUnlockedArea(path.source) then
-                    path.lastSpawnTime = path.lastSpawnTime + dt
-                    
-                    -- Check for link bonus
-                    local spawnMultiplier = 1.0
-                    for _, bonus in ipairs(gameState.linkBonuses) do
-                        if bonus.node == path.source then
-                            spawnMultiplier = bonus.multiplier
-                            break
-                        end
-                    end
-                    
-                    -- Apply node's spawn rate (fix: multiply the delay instead of dividing)
-                    local effectiveDelay = path.spawnDelay * (1 / (spawnMultiplier * path.source.spawnRate))
-                    
-                    if path.lastSpawnTime >= effectiveDelay then
-                        path.lastSpawnTime = 0
-                        path.source.beeCount = path.source.beeCount - 1
-                        local newBee = Bee.new(
-                            path.source.x,
-                            path.source.y,
-                            path.target.x,
-                            path.target.y,
-                            path.source.owner,
-                            gameState
-                        )
-                        if newBee then
-                            table.insert(gameState.bees, newBee)
-                        end
-                    end
-                end
-            end
-        end
-        
-        -- Enemy AI behavior for all enemy hives in unlocked areas
-        for i = #gameState.enemyHives, 1, -1 do
-            local hive = gameState.enemyHives[i]
-            
-            -- First check if the hive is still owned by an enemy
-            if hive.owner:sub(1, 5) ~= "enemy" then
-                table.remove(gameState.enemyHives, i)
-            -- Then check if the hive itself is in an unlocked area and still owned by this enemy
-            elseif isNodeInUnlockedArea(hive) and hive.beeCount > 1 and hive.owner == "enemy" .. tostring(hive.section) then
-                
-                -- Update timer
-                gameState.enemyTimers[hive].lastSpawnTime = gameState.enemyTimers[hive].lastSpawnTime + dt
-                
-                -- Check if it's time to run AI cycle
-                if gameState.enemyTimers[hive].lastSpawnTime >= gameState.enemyTimers[hive].spawnDelay then
-                    
-                    gameState.enemyTimers[hive].lastSpawnTime = 0
-                    
-                    -- Initialize variables for finding nearest node
-                    local nearestNode = nil
-                    local minDist = math.huge
-                    
-                    -- Get all nodes owned by this enemy
-                    local ownedNodes = {}
-                    for _, node in ipairs(nodes) do
-                        if node.owner == "enemy" .. tostring(hive.section) and isNodeInUnlockedArea(node) and node.beeCount > 1 then
-                            table.insert(ownedNodes, node)
-                        end
-                    end
-                    
-                    -- For each owned node, find potential targets
-                    for _, sourceNode in ipairs(ownedNodes) do
-                        
-                        -- Get all neighbor nodes
-                        local neighborNodes = {}
-                        for _, targetNode in ipairs(nodes) do
-                            -- Check if this node is a neighbor of the source node
-                            if isNeighbor(sourceNode, targetNode) then
-                                table.insert(neighborNodes, targetNode)
-                            end
-                        end
-                        
-                        -- Then filter for valid targets in unlocked areas
-                        local validTargets = {}
-                        for _, targetNode in ipairs(neighborNodes) do
-                            -- Check if node is in unlocked area
-                            local inUnlockedArea = isNodeInUnlockedArea(targetNode)
-                            
-                            -- Check if node is not the source
-                            local notSource = targetNode ~= sourceNode
-                            
-                            -- Check if node has valid owner (neutral or enemy)
-                            local validOwner = targetNode.owner == "neutral" or targetNode.owner ~= "enemy" .. tostring(hive.section)
-
-                            -- Check if node is not a captured hive
-                            local notCapturedHive = not (targetNode.isHive and targetNode.owner ~= "enemy" .. tostring(hive.section))
-                            
-                            if inUnlockedArea and notSource and validOwner and notCapturedHive then
-                                table.insert(validTargets, targetNode)
-                            end
-                        end
-                        
-                        -- Add some randomization to target selection
-                        if #validTargets > 0 then
-                            -- 70% chance to pick closest target, 30% chance to pick random target
-                            local targetNode
-                            if math.random() < 0.7 then
-                                -- Find closest target
-                                local minDist = math.huge
-                                for _, target in ipairs(validTargets) do
-                                    local dx = target.x - sourceNode.x
-                                    local dy = target.y - sourceNode.y
-                                    local dist = math.sqrt(dx * dx + dy * dy)
-                                    if dist < minDist then
-                                        minDist = dist
-                                        targetNode = target
-                                    end
-                                end
-                            else
-                                -- Pick random target
-                                targetNode = validTargets[math.random(1, #validTargets)]
-                            end
-                            
-                            if targetNode then
-                                local dx = targetNode.x - sourceNode.x
-                                local dy = targetNode.y - sourceNode.y
-                                local dist = math.sqrt(dx * dx + dy * dy)
-                                if dist < minDist then
-                                    minDist = dist
-                                    nearestNode = targetNode
-                                end
-                            end
-                        end
-                    end
-                    
-                    -- If we found a new target, create a path
-                    if nearestNode then
-                        -- Check if path already exists
-                        local pathExists = false
-                        for _, path in ipairs(gameState.paths) do
-                            if path.source.owner == hive.owner and path.target == nearestNode then
-                                pathExists = true
-                                break
-                            end
-                        end
-                        
-                        if not pathExists then
-                            -- Find the source node that's closest to the target
-                            local bestSource = nil
-                            local bestDist = math.huge
-                            for _, sourceNode in ipairs(ownedNodes) do
-                                if isNeighbor(sourceNode, nearestNode) then
-                                    local dx = sourceNode.x - nearestNode.x
-                                    local dy = sourceNode.y - nearestNode.y
-                                    local dist = math.sqrt(dx * dx + dy * dy)
-                                    if dist < bestDist then
-                                        bestDist = dist
-                                        bestSource = sourceNode
-                                    end
-                                end
-                            end
-                            
-                            if bestSource then
-                                -- Check if this source node already has a path
-                                local sourceHasPath = false
-                                for _, path in ipairs(gameState.paths) do
-                                    if path.source == bestSource then
-                                        sourceHasPath = true
-                                        break
-                                    end
-                                end
-            
-                                if not sourceHasPath then
-                                    table.insert(gameState.paths, {
-                                        source = bestSource,
-                                        target = nearestNode,
-                                        lastSpawnTime = 0,
-                                        spawnDelay = gameState.SPAWN_DELAY
-                                    })
-                                else
-                                    -- Try to find another source node
-                                    for _, altSource in ipairs(ownedNodes) do
-                                        if altSource ~= bestSource and isNeighbor(altSource, nearestNode) then
-                                            local hasPath = false
-                                            for _, path in ipairs(gameState.paths) do
-                                                if path.source == altSource then
-                                                    hasPath = true
-                                                    break
-                                                end
-                                            end
-                                            if not hasPath then
-                                                table.insert(gameState.paths, {
-                                                    source = altSource,
-                                                    target = nearestNode,
-                                                    lastSpawnTime = 0,
-                                                    spawnDelay = gameState.SPAWN_DELAY
-                                                })
-                                                break
-                                            end
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        
-        -- Update bees
-        for i = #gameState.bees, 1, -1 do
-            if gameState.bees[i]:update(dt) then
-                -- When a bee arrives, check if it's capturing a hive
-                local targetNode = gameState.bees[i].targetNode
-                if targetNode then                    
-                    -- First check for hive capture if it's a hive
-                    if targetNode.isHive and targetNode.owner ~= gameState.bees[i].owner then
-                        -- Store the new owner before handling the capture
-                        local newOwner = gameState.bees[i].owner
-                        
-                        -- Handle the hive capture
-                        handleHiveCapture(targetNode, newOwner)
-                    end
-                    
-                    -- Then handle the node capture
-                    if targetNode.owner ~= gameState.bees[i].owner then
-                        -- If node is neutral or has fewer bees, capture it
-                        if targetNode.owner == "neutral" or targetNode.beeCount < 1 then
-                            handleNodeCapture(targetNode, gameState.bees[i].owner)
-                            targetNode.beeCount = 1
-                        else
-                            -- Otherwise, reduce the node's bee count
-                            targetNode.beeCount = targetNode.beeCount - 1
-                            if targetNode.beeCount <= 0 then
-                                handleNodeCapture(targetNode, gameState.bees[i].owner)
-                                targetNode.beeCount = 1
-                            end
-                        end
-                    else
-                        -- If same owner, just add the bee
-                        targetNode.beeCount = targetNode.beeCount + 1
-                    end
-                end
-                table.remove(gameState.bees, i)
-            end
-        end
-        
-        
-        -- Update resource nodes
-        for _, node in ipairs(nodes) do
-            if node.isResourceNode and node.owner ~= "neutral" then
-                -- Generate pollen over time
-                node.resourceAmount = node.resourceAmount + (dt * 0.5) -- 0.5 pollen per second
-                
-                -- Convert pollen to bees periodically
-                if node.resourceAmount >= 5 then
-                    node.resourceAmount = node.resourceAmount - 5
-                    if node.beeCount < node.maxBees then
-                        node.beeCount = node.beeCount + 1
-                    end
-                end
-            end
-        end
-        
-        -- Check win condition
-        checkWinCondition()
-        
-        -- Update capture effects
-        for i = #gameState.captureEffects, 1, -1 do
-            local effect = gameState.captureEffects[i]
-            effect.time = effect.time + dt
-            effect.radius = 30 + (effect.maxRadius - 30) * (effect.time / effect.duration)
-            effect.alpha = 1 - (effect.time / effect.duration)
-            
-            if effect.time >= effect.duration then
-                table.remove(gameState.captureEffects, i)
-            end
-        end
-        
-        -- Update bee trail effects
-        for i = #gameState.beeTrailEffects, 1, -1 do
-            local effect = gameState.beeTrailEffects[i]
-            effect.time = effect.time + dt
-            effect.progress = effect.time / effect.duration
-            
-            if effect.time >= effect.duration then
-                table.remove(gameState.beeTrailEffects, i)
-            end
-        end
-        
-        -- Update screen shake
-        if gameState.screenShake.time < gameState.screenShake.duration then
-            gameState.screenShake.time = gameState.screenShake.time + dt
-            gameState.screenShake.intensity = gameState.screenShake.intensity * (1 - dt)
-        end
-        
-        -- Update path effects
-        for i = #gameState.pathEffects, 1, -1 do
-            local effect = gameState.pathEffects[i]
-            effect.time = effect.time + dt
-            effect.progress = effect.time / effect.duration
-            
-            -- Update segment progress
-            for j = 1, effect.segments do
-                effect.segmentProgress[j] = math.min(1, effect.progress * 2 - (j-1) * 0.1)
-            end
-            
-            if effect.time >= effect.duration then
-                table.remove(gameState.pathEffects, i)
-            end
-        end
-        
-        -- Update capture particles
-        for i = #gameState.captureParticles, 1, -1 do
-            local particle = gameState.captureParticles[i]
-            particle.time = particle.time + dt
-            particle.x = particle.x + particle.vx * dt
-            particle.y = particle.y + particle.vy * dt
-            particle.alpha = 1 - (particle.time / particle.duration)
-            
-            if particle.time >= particle.duration then
-                table.remove(gameState.captureParticles, i)
-            end
+        elseif not gameState.gameOver then
+            -- Update game elements
+            updateGameElements(dt)
         end
     end
 end
 
 function love.draw()
-    if gameState.currentState == "menu" then
-        -- Draw menu
-        local iconWidth = menuIcon:getWidth()
-        local iconHeight = menuIcon:getHeight()
-        local scale = 0.25
-        local scaledWidth = iconWidth * scale
-        local scaledHeight = iconHeight * scale
-        local centerX = love.graphics.getWidth() / 2 - scaledWidth / 2
-        local centerY = love.graphics.getHeight() / 2 - scaledHeight / 2
-        
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(menuIcon, centerX, 0, 0, scale, scale)
-        
-        love.graphics.setColor(0, 0, 0)
-        love.graphics.print("Click to Start", 350, centerY + scaledHeight + 20)
+    if gameState.currentState == "menu" or Transition.isTransitioning() then
+        Menu.draw()
     elseif gameState.currentState == "playing" then
         -- Apply screen shake before camera transformation
         if gameState.screenShake.time < gameState.screenShake.duration then
@@ -812,125 +441,8 @@ function love.draw()
         love.graphics.scale(gameState.camera.scale)
         love.graphics.translate(-gameState.camera.x, -gameState.camera.y)
         
-        -- Draw black background for the entire game area
-        love.graphics.setColor(0, 0, 0, 1)
-        love.graphics.rectangle("fill", -2000, -2000, 4000, 4000) -- Large enough to cover the entire game area
-        
-        -- Draw yellow background for unlocked sections
-        for i, section in ipairs(gameState.mapSections) do
-            if table.contains(gameState.unlockedAreas, i) then
-                local startX = section.startX
-                local startY = section.startY
-                local endX = startX + (section.gridSize - 1) * section.spacing
-                local endY = startY + (section.gridSize - 1) * section.spacing
-                
-                -- Draw light yellow background for unlocked section
-                love.graphics.setColor(0.9, 0.9, 0.8, 1)
-                love.graphics.rectangle("fill", 
-                    startX - 60, 
-                    startY - 60,
-                    endX - startX + 120,
-                    endY - startY + 120
-                )
-            end
-        end
-        
-        -- Draw particles for all sections
-        for _, fog in ipairs(gameState.fogParticles) do
-            -- Only draw fog for unlocked areas
-            if table.contains(gameState.unlockedAreas, fog.section) then
-                for _, point in ipairs(fog.points) do
-                    love.graphics.setColor(0, 0, 0, point.alpha)
-                    love.graphics.push()
-                    love.graphics.translate(point.x, point.y)
-                    love.graphics.rotate(point.rotation)
-                    love.graphics.scale(point.scale, point.scale)
-                    love.graphics.rectangle("fill", -point.size, -point.size, point.size * 2, point.size * 2)
-                    love.graphics.pop()
-                end
-            end
-        end
-        
-        -- Draw paths with flow indicators
-        for _, path in ipairs(gameState.paths) do
-            -- Only draw paths from player nodes in unlocked areas
-            if path.source.owner == "player" and isNodeInUnlockedArea(path.source) then
-                -- Draw path line
-                love.graphics.setColor(0.2, 0.6, 1, 0.3)
-                love.graphics.line(path.source.x, path.source.y, path.target.x, path.target.y)
-                
-                -- Draw flow arrows
-                local midX = (path.source.x + path.target.x) / 2
-                local midY = (path.source.y + path.target.y) / 2
-                local angle = math.atan2(path.target.y - path.source.y, path.target.x - path.source.x) + math.pi/2
-                
-                -- Draw arrow
-                love.graphics.setColor(0.2, 0.6, 1, 0.8)
-                love.graphics.push()
-                love.graphics.translate(midX, midY)
-                love.graphics.rotate(angle)
-                love.graphics.polygon("fill", 
-                    0, -5,  -- Tip
-                    -5, 5,  -- Left base
-                    5, 5    -- Right base
-                )
-                love.graphics.pop()
-            end
-        end
-        
-        -- Draw nodes
-        for _, node in ipairs(nodes) do
-            if isNodeInUnlockedArea(node) then
-                node:draw()
-            end
-        end
-        
-        -- Draw bees
-        for _, bee in ipairs(gameState.bees) do
-            bee:draw()
-        end
-        
-        -- Draw capture effects
-        for _, effect in ipairs(gameState.captureEffects) do
-            love.graphics.setColor(effect.color[1], effect.color[2], effect.color[3], effect.alpha)
-            love.graphics.circle("line", effect.x, effect.y, effect.radius)
-            love.graphics.setColor(effect.color[1], effect.color[2], effect.color[3], effect.alpha * 0.3)
-            love.graphics.circle("fill", effect.x, effect.y, effect.radius)
-        end
-        
-        -- Draw bee trail effects
-        for _, effect in ipairs(gameState.beeTrailEffects) do
-            local x = effect.x + (effect.targetX - effect.x) * effect.progress
-            local y = effect.y + (effect.targetY - effect.y) * effect.progress
-            local alpha = 1 - effect.progress
-            
-            love.graphics.setColor(effect.color[1], effect.color[2], effect.color[3], alpha * 0.6)
-            love.graphics.circle("fill", x, y, 5)
-        end
-        
-        -- Draw path effects
-        for _, effect in ipairs(gameState.pathEffects) do
-            for i = 1, effect.segments do
-                local segmentProgress = effect.segmentProgress[i]
-                if segmentProgress > 0 then
-                    local startX = effect.x + (effect.targetX - effect.x) * (i-1) / effect.segments
-                    local startY = effect.y + (effect.targetY - effect.y) * (i-1) / effect.segments
-                    local endX = effect.x + (effect.targetX - effect.x) * i / effect.segments
-                    local endY = effect.y + (effect.targetY - effect.y) * i / effect.segments
-                    
-                    local alpha = 0.8 * (1 - segmentProgress)
-                    love.graphics.setColor(effect.color[1], effect.color[2], effect.color[3], alpha)
-                    love.graphics.setLineWidth(3)
-                    love.graphics.line(startX, startY, endX, endY)
-                end
-            end
-        end
-        
-        -- Draw capture particles
-        for _, particle in ipairs(gameState.captureParticles) do
-            love.graphics.setColor(particle.color[1], particle.color[2], particle.color[3], particle.alpha)
-            love.graphics.circle("fill", particle.x, particle.y, particle.size)
-        end
+        -- Draw game elements
+        drawGameElements()
         
         -- Restore camera transformation
         love.graphics.pop()
@@ -938,39 +450,39 @@ function love.draw()
         -- Draw UI (not affected by camera)
         drawUI()
         
-        -- Draw game over screen
-        if gameState.gameOver then
-            drawGameOver()
+        -- Draw game over screen if active
+        if GameOver.isShowing() then
+            GameOver.draw()
         end
     end
 end
 
 function drawUI()
     -- Draw timer
-        local timerText = string.format("%.1f", gameState.remainingTime)
+    local timerText = string.format("%.1f", gameState.remainingTime)
     local oldFont = love.graphics.getFont()
-    love.graphics.setFont(timerFont)
-        
-        local textWidth = timerFont:getWidth(timerText)
-        local textHeight = timerFont:getHeight()
-        local centerX = love.graphics.getWidth() / 2
+    love.graphics.setFont(Menu.getFont())
+    
+    local textWidth = Menu.getFont():getWidth(timerText)
+    local textHeight = Menu.getFont():getHeight()
+    local centerX = love.graphics.getWidth() / 2
     local centerY = 40
-        
-        -- Draw outline
-        love.graphics.setColor(0, 0, 0, 1)
+    
+    -- Draw outline
+    love.graphics.setColor(0, 0, 0, 1)
     for dx = -3, 3, 3 do
-            for dy = -3, 3, 3 do
-                love.graphics.print(timerText, centerX - textWidth/2 + dx, centerY - textHeight/2 + dy)
-            end
+        for dy = -3, 3, 3 do
+            love.graphics.print(timerText, centerX - textWidth/2 + dx, centerY - textHeight/2 + dy)
         end
-        
-        -- Draw main text
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.print(timerText, centerX - textWidth/2, centerY - textHeight/2)
-        
+    end
+    
+    -- Draw main text
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.print(timerText, centerX - textWidth/2, centerY - textHeight/2)
+    
     -- Restore original font
-        love.graphics.setFont(oldFont)
-        
+    love.graphics.setFont(oldFont)
+    
     -- Draw selected node info
     if gameState.selectedNode then
         local info = string.format("Bees: %d", gameState.selectedNode.beeCount)
@@ -979,35 +491,358 @@ function drawUI()
     end
 end
 
-function drawGameOver()
-    love.graphics.setColor(0, 0, 0, 0.7)
-    love.graphics.rectangle("fill", 0, 0, love.graphics.getWidth(), love.graphics.getHeight())
+function drawGameElements()
+    -- Draw black background for the entire game area
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.rectangle("fill", -2000, -2000, 4000, 4000)
     
-    love.graphics.setColor(1, 1, 1)
-    local text = "You Win!"
-    if gameState.winner ~= "player" then
-        text = "Enemy " .. gameState.winner:sub(6) .. " Wins!"
+    -- Draw yellow background for unlocked sections
+    for i, section in ipairs(gameState.mapSections) do
+        if table.contains(gameState.unlockedAreas, i) then
+            local startX = section.startX
+            local startY = section.startY
+            local endX = startX + (section.gridSize - 1) * section.spacing
+            local endY = startY + (section.gridSize - 1) * section.spacing
+            
+            -- Draw light yellow background for unlocked section
+            love.graphics.setColor(0.9, 0.9, 0.8, 1)
+            love.graphics.rectangle("fill", 
+                startX - 60, 
+                startY - 60,
+                endX - startX + 120,
+                endY - startY + 120
+            )
+        end
     end
-    local font = love.graphics.getFont()
-    local textWidth = font:getWidth(text)
-    local textHeight = font:getHeight()
     
-    love.graphics.print(text, 
-        love.graphics.getWidth()/2 - textWidth/2,
-        love.graphics.getHeight()/2 - textHeight/2)
+    -- Draw particles for all sections
+    for _, fog in ipairs(gameState.fogParticles) do
+        if table.contains(gameState.unlockedAreas, fog.section) then
+            for _, point in ipairs(fog.points) do
+                love.graphics.setColor(0, 0, 0, point.alpha)
+                love.graphics.push()
+                love.graphics.translate(point.x, point.y)
+                love.graphics.rotate(point.rotation)
+                love.graphics.scale(point.scale, point.scale)
+                love.graphics.rectangle("fill", -point.size, -point.size, point.size * 2, point.size * 2)
+                love.graphics.pop()
+            end
+        end
+    end
     
-    love.graphics.print("Click to play again",
-        love.graphics.getWidth()/2 - font:getWidth("Click to play again")/2,
-        love.graphics.getHeight()/2 + textHeight)
+    -- Draw paths with flow indicators
+    for _, path in ipairs(gameState.paths) do
+        if path.source.owner == "player" and isNodeInUnlockedArea(path.source) then
+            love.graphics.setColor(0.2, 0.6, 1, 0.3)
+            love.graphics.line(path.source.x, path.source.y, path.target.x, path.target.y)
+            
+            local midX = (path.source.x + path.target.x) / 2
+            local midY = (path.source.y + path.target.y) / 2
+            local angle = math.atan2(path.target.y - path.source.y, path.target.x - path.source.x) + math.pi/2
+            
+            love.graphics.setColor(0.2, 0.6, 1, 0.8)
+            love.graphics.push()
+            love.graphics.translate(midX, midY)
+            love.graphics.rotate(angle)
+            love.graphics.polygon("fill", 
+                0, -5,  -- Tip
+                -5, 5,  -- Left base
+                5, 5    -- Right base
+            )
+            love.graphics.pop()
+        end
+    end
+    
+    -- Draw nodes
+    for _, node in ipairs(nodes) do
+        if isNodeInUnlockedArea(node) then
+            node:draw()
+        end
+    end
+    
+    -- Draw bees
+    for _, bee in ipairs(gameState.bees) do
+        bee:draw()
+    end
+    
+    -- Draw effects
+    drawEffects()
+end
+
+function drawEffects()
+    -- Draw capture effects
+    for _, effect in ipairs(gameState.captureEffects) do
+        love.graphics.setColor(effect.color[1], effect.color[2], effect.color[3], effect.alpha)
+        love.graphics.circle("line", effect.x, effect.y, effect.radius)
+        love.graphics.setColor(effect.color[1], effect.color[2], effect.color[3], effect.alpha * 0.3)
+        love.graphics.circle("fill", effect.x, effect.y, effect.radius)
+    end
+    
+    -- Draw bee trail effects
+    for _, effect in ipairs(gameState.beeTrailEffects) do
+        local x = effect.x + (effect.targetX - effect.x) * effect.progress
+        local y = effect.y + (effect.targetY - effect.y) * effect.progress
+        local alpha = 1 - effect.progress
+        
+        love.graphics.setColor(effect.color[1], effect.color[2], effect.color[3], alpha * 0.6)
+        love.graphics.circle("fill", x, y, 5)
+    end
+    
+    -- Draw path effects
+    for _, effect in ipairs(gameState.pathEffects) do
+        for i = 1, effect.segments do
+            local segmentProgress = effect.segmentProgress[i]
+            if segmentProgress > 0 then
+                local startX = effect.x + (effect.targetX - effect.x) * (i-1) / effect.segments
+                local startY = effect.y + (effect.targetY - effect.y) * (i-1) / effect.segments
+                local endX = effect.x + (effect.targetX - effect.x) * i / effect.segments
+                local endY = effect.y + (effect.targetY - effect.y) * i / effect.segments
+                
+                local alpha = 0.8 * (1 - segmentProgress)
+                love.graphics.setColor(effect.color[1], effect.color[2], effect.color[3], alpha)
+                love.graphics.setLineWidth(3)
+                love.graphics.line(startX, startY, endX, endY)
+            end
+        end
+    end
+    
+    -- Draw capture particles
+    for _, particle in ipairs(gameState.captureParticles) do
+        love.graphics.setColor(particle.color[1], particle.color[2], particle.color[3], particle.alpha)
+        love.graphics.circle("fill", particle.x, particle.y, particle.size)
+    end
+end
+
+function updateGameElements(dt)
+    -- Update camera position with smoothing
+    gameState.camera.x = gameState.camera.x + (gameState.camera.targetX - gameState.camera.x) * gameState.camera.smoothing
+    gameState.camera.y = gameState.camera.y + (gameState.camera.targetY - gameState.camera.y) * gameState.camera.smoothing
+    
+    -- Update fog particles
+    for _, fog in ipairs(gameState.fogParticles) do
+        fog.time = fog.time + dt
+        for _, point in ipairs(fog.points) do
+            local phase = point.phase + fog.time * 2
+            point.alpha = 0.3 + math.sin(phase) * 0.2
+            point.rotation = point.rotation + point.rotationSpeed * dt
+            point.scale = 1 + math.sin(phase * 0.5) * 0.8
+        end
+    end
+    
+    -- Handle camera panning with arrow keys
+    local panSpeed = 500 * dt
+    if love.keyboard.isDown('left') then
+        gameState.camera.targetX = gameState.camera.targetX - panSpeed
+    end
+    if love.keyboard.isDown('right') then
+        gameState.camera.targetX = gameState.camera.targetX + panSpeed
+    end
+    if love.keyboard.isDown('up') then
+        gameState.camera.targetY = gameState.camera.targetY - panSpeed
+    end
+    if love.keyboard.isDown('down') then
+        gameState.camera.targetY = gameState.camera.targetY + panSpeed
+    end
+    
+    -- Update game timer
+    gameState.remainingTime = gameState.remainingTime - dt
+    if gameState.remainingTime <= 0 then
+        endGame("time")
+    end
+    
+    -- Update nodes in unlocked areas
+    for _, node in ipairs(nodes) do
+        if isNodeInUnlockedArea(node) then
+            node:update(dt)
+        end
+    end
+    
+    -- Update link bonuses
+    for i = #gameState.linkBonuses, 1, -1 do
+        local bonus = gameState.linkBonuses[i]
+        local elapsed = love.timer.getTime() - bonus.startTime
+        if elapsed >= bonus.duration then
+            table.remove(gameState.linkBonuses, i)
+        end
+    end
+    
+    -- Update paths and spawn bees
+    if gameState.gameStarted then
+        updatePaths(dt)
+    end
+    
+    -- Update enemy AI
+    updateEnemyAI(dt)
+    
+    -- Update bees
+    updateBees(dt)
+    
+    -- Update resource nodes
+    updateResourceNodes(dt)
+    
+    -- Check win condition
+    checkWinCondition()
+    
+    -- Update effects
+    updateEffects(dt)
+end
+
+function updatePaths(dt)
+    for _, path in ipairs(gameState.paths) do
+        if path.source.beeCount > 1 and isNodeInUnlockedArea(path.source) then
+            path.lastSpawnTime = path.lastSpawnTime + dt
+            
+            -- Check for link bonus
+            local spawnMultiplier = 1.0
+            for _, bonus in ipairs(gameState.linkBonuses) do
+                if bonus.node == path.source then
+                    spawnMultiplier = bonus.multiplier
+                    break
+                end
+            end
+            
+            -- Apply node's spawn rate
+            local effectiveDelay = path.spawnDelay * (1 / (spawnMultiplier * path.source.spawnRate))
+            
+            if path.lastSpawnTime >= effectiveDelay then
+                path.lastSpawnTime = 0
+                path.source.beeCount = path.source.beeCount - 1
+                local newBee = Bee.new(
+                    path.source.x,
+                    path.source.y,
+                    path.target.x,
+                    path.target.y,
+                    path.source.owner,
+                    gameState
+                )
+                if newBee then
+                    table.insert(gameState.bees, newBee)
+                end
+            end
+        end
+    end
+end
+
+function updateEnemyAI(dt)
+    for i = #gameState.enemyHives, 1, -1 do
+        local hive = gameState.enemyHives[i]
+        
+        if hive.owner:sub(1, 5) ~= "enemy" then
+            table.remove(gameState.enemyHives, i)
+        elseif isNodeInUnlockedArea(hive) and hive.beeCount > 1 and hive.owner == "enemy" .. tostring(hive.section) then
+            gameState.enemyTimers[hive].lastSpawnTime = gameState.enemyTimers[hive].lastSpawnTime + dt
+            
+            if gameState.enemyTimers[hive].lastSpawnTime >= gameState.enemyTimers[hive].spawnDelay then
+                gameState.enemyTimers[hive].lastSpawnTime = 0
+                
+                -- Find nearest valid target
+                local nearestNode = findNearestEnemyTarget(hive)
+                
+                if nearestNode then
+                    createEnemyPath(hive, nearestNode)
+                end
+            end
+        end
+    end
+end
+
+function updateBees(dt)
+    for i = #gameState.bees, 1, -1 do
+        if gameState.bees[i]:update(dt) then
+            local targetNode = gameState.bees[i].targetNode
+            if targetNode then
+                handleBeeArrival(targetNode, gameState.bees[i])
+            end
+            table.remove(gameState.bees, i)
+        end
+    end
+end
+
+function updateResourceNodes(dt)
+    for _, node in ipairs(nodes) do
+        if node.isResourceNode and node.owner ~= "neutral" then
+            node.resourceAmount = node.resourceAmount + (dt * 0.5)
+            
+            if node.resourceAmount >= 5 then
+                node.resourceAmount = node.resourceAmount - 5
+                if node.beeCount < node.maxBees then
+                    node.beeCount = node.beeCount + 1
+                end
+            end
+        end
+    end
+end
+
+function updateEffects(dt)
+    -- Update screen shake
+    if gameState.screenShake.time < gameState.screenShake.duration then
+        gameState.screenShake.time = gameState.screenShake.time + dt
+        gameState.screenShake.intensity = gameState.screenShake.intensity * (1 - dt)
+    end
+    
+    -- Update capture effects
+    for i = #gameState.captureEffects, 1, -1 do
+        local effect = gameState.captureEffects[i]
+        effect.time = effect.time + dt
+        effect.radius = 30 + (effect.maxRadius - 30) * (effect.time / effect.duration)
+        effect.alpha = 1 - (effect.time / effect.duration)
+        
+        if effect.time >= effect.duration then
+            table.remove(gameState.captureEffects, i)
+        end
+    end
+    
+    -- Update bee trail effects
+    for i = #gameState.beeTrailEffects, 1, -1 do
+        local effect = gameState.beeTrailEffects[i]
+        effect.time = effect.time + dt
+        effect.progress = effect.time / effect.duration
+        
+        if effect.time >= effect.duration then
+            table.remove(gameState.beeTrailEffects, i)
+        end
+    end
+    
+    -- Update path effects
+    for i = #gameState.pathEffects, 1, -1 do
+        local effect = gameState.pathEffects[i]
+        effect.time = effect.time + dt
+        effect.progress = effect.time / effect.duration
+        
+        for j = 1, effect.segments do
+            effect.segmentProgress[j] = math.min(1, effect.progress * 2 - (j-1) * 0.1)
+        end
+        
+        if effect.time >= effect.duration then
+            table.remove(gameState.pathEffects, i)
+        end
+    end
+    
+    -- Update capture particles
+    for i = #gameState.captureParticles, 1, -1 do
+        local particle = gameState.captureParticles[i]
+        particle.time = particle.time + dt
+        particle.x = particle.x + particle.vx * dt
+        particle.y = particle.y + particle.vy * dt
+        particle.alpha = 1 - (particle.time / particle.duration)
+        
+        if particle.time >= particle.duration then
+            table.remove(gameState.captureParticles, i)
+        end
+    end
 end
 
 function love.mousepressed(x, y, button)
     if button == 1 then -- Left click
-        if gameState.currentState == "menu" then
-            gameState.currentState = "playing"
+        if gameState.currentState == "menu" or Transition.isTransitioning() then
+            if Menu.handleClick(x, y, button) then
+                -- Don't change gameState.currentState here, let Menu.update handle it
+            end
         elseif gameState.currentState == "playing" then
-            if gameState.gameOver then
-                initializeGame()
+            if GameOver.isShowing() then
+                if GameOver.handleClick(x, y, button) then
+                    -- Game will be restarted in update
+                end
             else
                 -- Convert mouse position to world coordinates
                 local worldX = (x - love.graphics.getWidth()/2) / gameState.camera.scale + gameState.camera.x
@@ -1154,9 +989,9 @@ function endGame(reason)
                 winner = enemyType
             end
         end
-        gameState.winner = winner
+        GameOver.show(winner)
     else
-        gameState.winner = reason
+        GameOver.show(reason)
     end
 end
 
@@ -1563,5 +1398,184 @@ function assignResourceNodes()
                 node.maxBees = 15 + math.random(10)
             end
         end
+    end
+end
+
+function findNearestEnemyTarget(hive)
+    -- Initialize variables for finding nearest node
+    local nearestNode = nil
+    local minDist = math.huge
+    
+    -- Get all nodes owned by this enemy
+    local ownedNodes = {}
+    for _, node in ipairs(nodes) do
+        if node.owner == hive.owner and isNodeInUnlockedArea(node) and node.beeCount > 1 then
+            table.insert(ownedNodes, node)
+        end
+    end
+    
+    -- For each owned node, find potential targets
+    for _, sourceNode in ipairs(ownedNodes) do
+        -- Get all neighbor nodes
+        local neighborNodes = {}
+        for _, targetNode in ipairs(nodes) do
+            -- Check if this node is a neighbor of the source node
+            if isNeighbor(sourceNode, targetNode) then
+                table.insert(neighborNodes, targetNode)
+            end
+        end
+        
+        -- Then filter for valid targets in unlocked areas
+        local validTargets = {}
+        for _, targetNode in ipairs(neighborNodes) do
+            -- Check if node is in unlocked area
+            local inUnlockedArea = isNodeInUnlockedArea(targetNode)
+            
+            -- Check if node is not the source
+            local notSource = targetNode ~= sourceNode
+            
+            -- Check if node has valid owner (neutral or enemy)
+            local validOwner = targetNode.owner == "neutral" or targetNode.owner ~= hive.owner
+            
+            -- Check if node is not a captured hive
+            local notCapturedHive = not (targetNode.isHive and targetNode.owner ~= hive.owner)
+            
+            if inUnlockedArea and notSource and validOwner and notCapturedHive then
+                table.insert(validTargets, targetNode)
+            end
+        end
+        
+        -- Add some randomization to target selection
+        if #validTargets > 0 then
+            -- 70% chance to pick closest target, 30% chance to pick random target
+            local targetNode
+            if math.random() < 0.7 then
+                -- Find closest target
+                local minDist = math.huge
+                for _, target in ipairs(validTargets) do
+                    local dx = target.x - sourceNode.x
+                    local dy = target.y - sourceNode.y
+                    local dist = math.sqrt(dx * dx + dy * dy)
+                    if dist < minDist then
+                        minDist = dist
+                        targetNode = target
+                    end
+                end
+            else
+                -- Pick random target
+                targetNode = validTargets[math.random(1, #validTargets)]
+            end
+            
+            if targetNode then
+                local dx = targetNode.x - sourceNode.x
+                local dy = targetNode.y - sourceNode.y
+                local dist = math.sqrt(dx * dx + dy * dy)
+                if dist < minDist then
+                    minDist = dist
+                    nearestNode = targetNode
+                end
+            end
+        end
+    end
+    
+    return nearestNode
+end
+
+function createEnemyPath(hive, targetNode)
+    -- Find the source node that's closest to the target
+    local bestSource = nil
+    local bestDist = math.huge
+    local ownedNodes = {}
+    
+    -- Get all nodes owned by this enemy
+    for _, node in ipairs(nodes) do
+        if node.owner == hive.owner and isNodeInUnlockedArea(node) and node.beeCount > 1 then
+            table.insert(ownedNodes, node)
+        end
+    end
+    
+    -- Find the best source node
+    for _, sourceNode in ipairs(ownedNodes) do
+        if isNeighbor(sourceNode, targetNode) then
+            local dx = sourceNode.x - targetNode.x
+            local dy = sourceNode.y - targetNode.y
+            local dist = math.sqrt(dx * dx + dy * dy)
+            if dist < bestDist then
+                bestDist = dist
+                bestSource = sourceNode
+            end
+        end
+    end
+    
+    if bestSource then
+        -- Check if this source node already has a path
+        local sourceHasPath = false
+        for _, path in ipairs(gameState.paths) do
+            if path.source == bestSource then
+                sourceHasPath = true
+                break
+            end
+        end
+        
+        if not sourceHasPath then
+            table.insert(gameState.paths, {
+                source = bestSource,
+                target = targetNode,
+                lastSpawnTime = 0,
+                spawnDelay = gameState.SPAWN_DELAY
+            })
+        else
+            -- Try to find another source node
+            for _, altSource in ipairs(ownedNodes) do
+                if altSource ~= bestSource and isNeighbor(altSource, targetNode) then
+                    local hasPath = false
+                    for _, path in ipairs(gameState.paths) do
+                        if path.source == altSource then
+                            hasPath = true
+                            break
+                        end
+                    end
+                    if not hasPath then
+                        table.insert(gameState.paths, {
+                            source = altSource,
+                            target = targetNode,
+                            lastSpawnTime = 0,
+                            spawnDelay = gameState.SPAWN_DELAY
+                        })
+                        break
+                    end
+                end
+            end
+        end
+    end
+end
+
+function handleBeeArrival(targetNode, bee)
+    -- First check for hive capture if it's a hive
+    if targetNode.isHive and targetNode.owner ~= bee.owner then
+        -- Store the new owner before handling the capture
+        local newOwner = bee.owner
+        
+        -- Handle the hive capture
+        handleHiveCapture(targetNode, newOwner)
+    end
+    
+    -- Then handle the node capture
+    if targetNode.owner ~= bee.owner then
+        -- If node is neutral or has fewer bees, capture it
+        if targetNode.owner == "neutral" or targetNode.beeCount < 1 then
+            handleNodeCapture(targetNode, bee.owner)
+            targetNode.beeCount = 1
+        else
+            -- Otherwise, reduce the node's bee count
+            targetNode.beeCount = targetNode.beeCount - 1
+            if targetNode.beeCount <= 0 then
+                handleNodeCapture(targetNode, bee.owner)
+                targetNode.beeCount = 1
+            end
+        end
+    else
+        -- If same owner, just add the bee
+        targetNode.beeCount = targetNode.beeCount + 1
     end
 end
