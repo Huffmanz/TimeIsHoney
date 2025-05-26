@@ -1,5 +1,6 @@
 local Transition = require("transition")
 local Bee = require("bee")
+local SFX = require("sfx")
 
 local Menu = {
     currentState = "menu", -- menu, playing
@@ -17,7 +18,8 @@ local Menu = {
     isHovering = false,  -- Store hover state
     honeyParticles = {}, -- Add honey particles
     glowIntensity = 0,  -- Add glow intensity
-    glowDirection = 1   -- Add glow direction
+    glowDirection = 1,   -- Add glow direction
+    wasHovering = false  -- Track previous hover state
 }
 
 function Menu.load()
@@ -162,6 +164,12 @@ function Menu.update(dt)
     Menu.isHovering = mouseX >= buttonX and mouseX <= buttonX + buttonWidth and
                       mouseY >= buttonY and mouseY <= buttonY + buttonHeight
     
+    -- Play hover sound when mouse enters button
+    if Menu.isHovering and not Menu.wasHovering then
+        SFX.play("uiHover")
+    end
+    Menu.wasHovering = Menu.isHovering
+    
     if Menu.isHovering then
         Menu.selectedButton = "start"
         Menu.buttonHoverTime = Menu.buttonHoverTime + dt
@@ -202,6 +210,8 @@ function Menu.handleClick(x, y, button)
         
         if x >= buttonX and x <= buttonX + buttonWidth and
            y >= buttonY and y <= buttonY + buttonHeight then
+            -- Play click sound
+            SFX.play("uiClick")
             Transition.start(0.5, function()
                 Menu.currentState = "playing"
             end)

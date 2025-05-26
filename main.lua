@@ -80,6 +80,8 @@ local Menu = require("menu")
 local Transition = require("transition")
 local GameOver = require("gameover")
 local Splash = require("splash")
+local Music = require("music")
+local SFX = require("sfx")
 
 -- Initialize game objects
 local nodes = {}
@@ -266,6 +268,9 @@ function initializeFogParticles()
 end
 
 function love.load()
+    -- Initialize audio system
+    love.audio.setVolume(1.0)
+    
     -- Load assets
     love.graphics.setBackgroundColor(0.9, 0.9, 0.8) -- Light yellow background
     
@@ -276,6 +281,12 @@ function love.load()
     
     -- Set default font
     love.graphics.setFont(gameState.fonts.medium)
+    
+    -- Initialize music first
+    Music.load()
+    
+    -- Initialize sound effects
+    SFX.load()
     
     -- Initialize splash screen
     Splash.load()
@@ -439,6 +450,8 @@ function love.update(dt)
             updateGameElements(dt)
         end
     end
+    
+    -- Update sound effects
 end
 
 function love.draw()
@@ -771,6 +784,8 @@ function updateBees(dt)
             if gameState.bees[i]:update(dt) then
                 local targetNode = gameState.bees[i].targetNode
                 if targetNode then                    
+                -- Play bee sound when bee arrives
+                SFX.play("bee")
                 handleBeeArrival(targetNode, gameState.bees[i])
                 end
                 table.remove(gameState.bees, i)
@@ -859,7 +874,11 @@ function love.mousepressed(x, y, button)
             initializeGame()
         end
     elseif gameState.currentState == "playing" then
-        if not GameOver.isShowing() then
+        if GameOver.isShowing() then
+            if GameOver.handleClick(x, y, button) then
+                -- Game over screen will handle the restart
+            end
+        else
             handleGameClick(x, y, button)
         end
     end
@@ -892,6 +911,8 @@ function handleNodeClick(x, y)
             -- Select source node
             if clickedNode.owner == "player" and clickedNode.beeCount > 0 then
                 gameState.selectedNode = clickedNode
+                -- Play selection sound
+                SFX.play("selectNode")
             end
         else
             -- Create or update path
@@ -1019,6 +1040,47 @@ function table.contains(table, element)
     return false
 end
 
+function handleNodeCapture(node, newOwner)
+    -- Store the current bee count
+    local currentBeeCount = node.beeCount
+    
+    -- Remove all outgoing connections from this node
+    removeNodePaths(node)
+
+    -- Check for link bonus
+    local hasLinkBonus = false
+    for _, ownedNode in ipairs(nodes) do
+        if ownedNode.owner == newOwner and isNeighbor(node, ownedNode) then
+            hasLinkBonus = true
+            -- Add link bonus
+            table.insert(gameState.linkBonuses, {
+                node = node,
+                startTime = love.timer.getTime(),
+                duration = 15, -- 15 seconds
+                multiplier = 1.1 -- 10% bonus
+            })
+            break
+        end
+    end
+    
+    -- Update node owner and ensure bee count is at least 1
+    node.owner = newOwner
+    node.beeCount = math.max(1, currentBeeCount)
+    
+    -- Play appropriate capture sound
+    if newOwner == "player" then
+        SFX.play("captureNode")
+    else
+        SFX.play("enemyCaptureNode")
+    end
+    
+    -- Create capture effect
+    local r, g, b = node:getColor()
+    createCaptureEffect(node.x, node.y, {r, g, b})
+    createCaptureParticles(node.x, node.y, {r, g, b})
+    createScreenShake(5, 0.2) -- Add screen shake on capture
+end
+
 function handleHiveCapture(hive, newOwner)    
     -- Store the current bee count
     local currentBeeCount = hive.beeCount
@@ -1054,193 +1116,18 @@ function handleHiveCapture(hive, newOwner)
     -- Restore the bee count
     hive.beeCount = currentBeeCount
     
+    -- Play appropriate capture sound
+    if newOwner == "player" then
+        SFX.play("captureHive")
+    else
+        SFX.play("enemyCaptureHive")
+    end
+    
     -- If this was an enemy hive and is now player owned, unlock the next area
     if newOwner == "player" and hive.owner == "player" then
         local nextArea = hive.section + 1
         if nextArea <= #gameState.mapSections and not table.contains(gameState.unlockedAreas, nextArea) then
             table.insert(gameState.unlockedAreas, nextArea)
-            
-            -- Remove particles for any area that is unlocked or adjacent to an unlocked area
-            for i = #gameState.fogParticles, 1, -1 do
-                local fog = gameState.fogParticles[i]
-                local shouldRemove = false
-                
-                -- Get the boundaries of this section
-                local section = gameState.mapSections[fog.section]
-                local sectionNodes = {}
-                for _, node in ipairs(nodes) do
-                    if node.section == fog.section then
-                        table.insert(sectionNodes, node)
-                    end
-                end
-                
-                -- Find the boundaries
-                local minX, maxX = math.huge, -math.huge
-                local minY, maxY = math.huge, -math.huge
-                for _, node in ipairs(sectionNodes) do
-                    minX = math.min(minX, node.x)
-                    maxX = math.max(maxX, node.x)
-                    minY = math.min(minY, node.y)
-                    maxY = math.max(maxY, node.y)
-                end
-                -- Track which edges should have fog
-                local keepTopEdge = true
-                local keepBottomEdge = true
-                local keepLeftEdge = true
-                local keepRightEdge = true
-                
-                -- Check if this section shares an edge with any unlocked area
-                for _, unlockedArea in ipairs(gameState.unlockedAreas) do
-                    if unlockedArea ~= fog.section then -- Don't compare with self
-                        local unlockedSection = gameState.mapSections[unlockedArea]
-                        local unlockedNodes = {}
-                        for _, node in ipairs(nodes) do
-                            if node.section == unlockedArea then
-                                table.insert(unlockedNodes, node)
-                            end
-                        end
-                        
-                        -- Find unlocked section boundaries
-                        local unlockedMinX, unlockedMaxX = math.huge, -math.huge
-                        local unlockedMinY, unlockedMaxY = math.huge, -math.huge
-                        for _, node in ipairs(unlockedNodes) do
-                            unlockedMinX = math.min(unlockedMinX, node.x)
-                            unlockedMaxX = math.max(unlockedMaxX, node.x)
-                            unlockedMinY = math.min(unlockedMinY, node.y)
-                            unlockedMaxY = math.max(unlockedMaxY, node.y)
-                        end
-                        
-                        
-                        -- Check if sections share an edge
-                        -- They share an edge if:
-                        -- 1. Their X ranges overlap AND one's top/bottom edge aligns with the other's
-                        -- 2. Their Y ranges overlap AND one's left/right edge aligns with the other's
-                        local xOverlap = (minX <= unlockedMaxX and maxX >= unlockedMinX)
-                        local yOverlap = (minY <= unlockedMaxY and maxY >= unlockedMinY)
-                        
-                        -- Check for edge alignment (with a larger tolerance for grid alignment)
-                        local tolerance = 140 -- Grid spacing
-                        local topAligned = math.abs(minY - unlockedMaxY) <= tolerance
-                        local bottomAligned = math.abs(maxY - unlockedMinY) <= tolerance
-                        local leftAligned = math.abs(minX - unlockedMaxX) <= tolerance
-                        local rightAligned = math.abs(maxX - unlockedMinX) <= tolerance
-                        
-                        -- Update which edges should keep fog
-                        if xOverlap then
-                            if topAligned then 
-                                keepTopEdge = false
-                            end
-                            if bottomAligned then 
-                                keepBottomEdge = false
-                            end
-                        end
-                        if yOverlap then
-                            if leftAligned then 
-                                keepLeftEdge = false
-                            end
-                            if rightAligned then 
-                                keepRightEdge = false
-                            end
-                        end
-                    end
-                end
-                
-                
-                -- Recreate fog particles for this section
-                local points = {}
-                local spacing = 8
-                local borderOffset = 60
-                
-                -- Calculate edge positions relative to center
-                local centerX = (minX + maxX) / 2
-                local centerY = (minY + maxY) / 2
-                local width = maxX - minX
-                local height = maxY - minY
-                local leftEdge = centerX - (width/2) - borderOffset
-                local rightEdge = centerX + (width/2) + borderOffset
-                local topEdge = centerY - (height/2) - borderOffset
-                local bottomEdge = centerY + (height/2) + borderOffset
-                
-                -- Add particles only for edges that should keep fog
-                if keepTopEdge then
-                    for x = leftEdge, rightEdge, spacing do
-                        table.insert(points, {
-                            x = x,
-                            y = topEdge,
-                            alpha = 0,
-                            size = 12,
-                            rotation = love.math.random() * math.pi * 2,
-                            rotationSpeed = (love.math.random() - 0.5) * 2,
-                            scale = 1,
-                            scaleSpeed = (love.math.random() - 0.5) * 0.5,
-                            phase = love.math.random() * math.pi * 2
-                        })
-                    end
-                end
-                
-                if keepRightEdge then
-                    for y = topEdge, bottomEdge, spacing do
-                        table.insert(points, {
-                            x = rightEdge,
-                            y = y,
-                            alpha = 0,
-                            size = 12,
-                            rotation = love.math.random() * math.pi * 2,
-                            rotationSpeed = (love.math.random() - 0.5) * 2,
-                            scale = 1,
-                            scaleSpeed = (love.math.random() - 0.5) * 0.5,
-                            phase = love.math.random() * math.pi * 2
-                        })
-                    end
-                end
-                
-                if keepBottomEdge then
-                    for x = rightEdge, leftEdge, -spacing do
-                        table.insert(points, {
-                            x = x,
-                            y = bottomEdge,
-                            alpha = 0,
-                            size = 12,
-                            rotation = love.math.random() * math.pi * 2,
-                            rotationSpeed = (love.math.random() - 0.5) * 2,
-                            scale = 1,
-                            scaleSpeed = (love.math.random() - 0.5) * 0.5,
-                            phase = love.math.random() * math.pi * 2
-                        })
-                    end
-                end
-                
-                if keepLeftEdge then
-                    for y = bottomEdge, topEdge, -spacing do
-                        table.insert(points, {
-                            x = leftEdge,
-                            y = y,
-                            alpha = 0,
-                            size = 12,
-                            rotation = love.math.random() * math.pi * 2,
-                            rotationSpeed = (love.math.random() - 0.5) * 2,
-                            scale = 1,
-                            scaleSpeed = (love.math.random() - 0.5) * 0.5,
-                            phase = love.math.random() * math.pi * 2
-                        })
-                    end
-                end
-                
-                -- Update the fog system with new points
-                fog.points = points
-                fog.isUnlocked = table.contains(gameState.unlockedAreas, fog.section)
-
-                -- Only remove if there are no particles left
-                if #points == 0 then
-                    shouldRemove = true
-                end
-                
-                if shouldRemove then
-                    table.remove(gameState.fogParticles, i)
-                end
-            end
-            
-            -- Reinitialize fog particles to ensure proper state
             initializeFogParticles()
         end
     end
@@ -1264,41 +1151,6 @@ function removeNodePaths(node)
     for i = #pathsToRemove, 1, -1 do
         table.remove(gameState.paths, pathsToRemove[i])
     end
-end
-
-
-function handleNodeCapture(node, newOwner)
-    -- Store the current bee count
-    local currentBeeCount = node.beeCount
-    
-    -- Remove all outgoing connections from this node
-    removeNodePaths(node)
-
-    -- Check for link bonus
-    local hasLinkBonus = false
-    for _, ownedNode in ipairs(nodes) do
-        if ownedNode.owner == newOwner and isNeighbor(node, ownedNode) then
-            hasLinkBonus = true
-            -- Add link bonus
-            table.insert(gameState.linkBonuses, {
-                node = node,
-                startTime = love.timer.getTime(),
-                duration = 15, -- 15 seconds
-                multiplier = 1.1 -- 10% bonus
-            })
-            break
-        end
-    end
-    
-    -- Update node owner and ensure bee count is at least 1
-    node.owner = newOwner
-    node.beeCount = math.max(1, currentBeeCount)
-    
-    -- Create capture effect
-    local r, g, b = node:getColor()
-    createCaptureEffect(node.x, node.y, {r, g, b})
-    createCaptureParticles(node.x, node.y, {r, g, b})
-    createScreenShake(5, 0.2) -- Add screen shake on capture
 end
 
 function createCaptureEffect(x, y, color)
@@ -1596,6 +1448,10 @@ function handleGameClick(x, y, button)
         -- Convert mouse position to world coordinates
         local worldX = (x - love.graphics.getWidth()/2) / gameState.camera.scale + gameState.camera.x
         local worldY = (y - love.graphics.getHeight()/2) / gameState.camera.scale + gameState.camera.y
+        
+        -- Play click sound
+        SFX.play("click")
+        
         handleNodeClick(worldX, worldY)
     end
 end

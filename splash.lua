@@ -1,4 +1,5 @@
 local Transition = require("transition")
+local Music = require("music")
 
 local Splash = {
     currentState = "showing", -- showing, done
@@ -7,13 +8,20 @@ local Splash = {
     assets = {
         titleFont = nil,
         subtitleFont = nil
-    }
+    },
+    alpha = 0,
+    fadeInTime = 1,
+    fadeOutTime = 1,
+    state = "fadeIn" -- fadeIn, hold, fadeOut
 }
 
 function Splash.load()
     -- Load fonts
     Splash.assets.titleFont = love.graphics.newFont("assets/KenneyPixel.ttf", 48)
     Splash.assets.subtitleFont = love.graphics.newFont("assets/KenneyPixel.ttf", 72)
+    
+    -- Start playing music
+    Music.play()
 end
 
 function Splash.draw()
