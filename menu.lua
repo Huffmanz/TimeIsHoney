@@ -1,63 +1,103 @@
 local Transition = require("transition")
 local Bee = require("bee")
 local SFX = require("sfx")
+local HowToPlay = require("howToPlay")
 
-local Menu = {
-    currentState = "menu", -- menu, playing
-    assets = {
-        titleFont = nil,
-        subtitleFont = nil,
-        buttonFont = nil
+-- First create the Menu table
+local Menu = {}
+
+-- Then define its properties
+Menu.currentState = "menu" -- menu, howToPlay, playing
+Menu.assets = {
+    titleFont = nil,
+    subtitleFont = nil,
+    buttonFont = nil
+}
+Menu.bees = {}
+Menu.titleOffset = 0
+Menu.titleDirection = 1
+Menu.selectedButton = nil
+Menu.buttonHoverTimes = {} -- Track hover time per button
+Menu.buttonHoverStates = {} -- Track if button has been hovered
+Menu.totalTime = 0  -- Add total time tracking
+Menu.isHovering = false  -- Store hover state
+Menu.honeyParticles = {} -- Add honey particles
+Menu.glowIntensity = 0  -- Add glow intensity
+Menu.glowDirection = 1   -- Add glow direction
+Menu.wasHovering = false  -- Track previous hover state
+
+-- Define button colors first
+local buttonColors = {
+    normal = {
+        normal = {0.2, 0.2, 0.2, 0.8},
+        hover = {0.3, 0.3, 0.3, 0.9},
+        text = {1, 1, 1},
+        textHover = {1, 0.8, 0.2},
+        glow = {1, 0.8, 0.2}
     },
-    bees = {},
-    titleOffset = 0,
-    titleDirection = 1,
-    selectedButton = nil,
-    buttonHoverTimes = {}, -- Track hover time per button
-    buttonHoverStates = {}, -- Track if button has been hovered
-    totalTime = 0,  -- Add total time tracking
-    isHovering = false,  -- Store hover state
-    honeyParticles = {}, -- Add honey particles
-    glowIntensity = 0,  -- Add glow intensity
-    glowDirection = 1,   -- Add glow direction
-    wasHovering = false,  -- Track previous hover state
-    buttons = {
-        start = {
-            text = "Start Game",
-            y = 50,
-            action = function()
-                Transition.start(0.5, function()
-                    Menu.currentState = "playing"
-                end)
-                return true
-            end,
-            colors = {
-                normal = {0.2, 0.2, 0.2, 0.8},
-                hover = {0.3, 0.3, 0.3, 0.9},
-                text = {1, 1, 1},
-                textHover = {1, 0.8, 0.2},
-                glow = {1, 0.8, 0.2}
-            }
-        },
-        quit = {
-            text = "Quit",
-            y = 130,
-            action = function()
-                love.event.quit()
-                return false
-            end,
-            colors = {
-                normal = {0.4, 0.1, 0.1, 0.8},
-                hover = {0.6, 0.2, 0.2, 0.9},
-                text = {1, 1, 1},
-                textHover = {1, 0.3, 0.3},
-                glow = {1, 0.3, 0.3}
-            }
+    quit = {
+        normal = {0.4, 0.1, 0.1, 0.8},
+        hover = {0.6, 0.2, 0.2, 0.9},
+        text = {1, 1, 1},
+        textHover = {1, 0.3, 0.3},
+        glow = {1, 0.3, 0.3}
+    }
+}
+
+-- Then define the buttons
+Menu.buttons = {
+    start = {
+        text = "Start Game",
+        y = 50,
+        action = function()
+            Transition.start(0.5, function()
+                return "playing"
+            end)
+            return "playing"
+        end,
+        colors = buttonColors.normal
+    },
+    howToPlay = {
+        text = "How to Play",
+        y = 130,
+        action = function()
+            Transition.start(0.5, function()
+                return "howToPlay"
+            end)
+            return false
+        end,
+        colors = buttonColors.normal
+    },
+    quit = {
+        text = "Quit",
+        y = 210,
+        action = function()
+            love.event.quit()
+            return false
+        end,
+        colors = buttonColors.quit
+    },
+    backToMenu = {
+        text = "Back to Menu",
+        y = 400,
+        action = function()
+            Transition.start(0.5, function()
+                Menu.currentState = "menu"
+            end)
+            return false
+        end,
+        colors = {
+            normal = {0.2, 0.2, 0.2, 0.8},
+            hover = {0.3, 0.3, 0.3, 0.9},
+            text = {1, 1, 1},
+            textHover = {1, 0.8, 0.2},
+            glow = {1, 0.8, 0.2}
         }
     }
 }
 
 function Menu.load()
+    print("Menu.load called")
     -- Initialize hover states for all buttons
     for buttonId, _ in pairs(Menu.buttons) do
         Menu.buttonHoverTimes[buttonId] = 0
@@ -95,6 +135,10 @@ function Menu.load()
             rotationSpeed = (love.math.random() - 0.5) * 2
         })
     end
+    
+    -- Load HowToPlay screen
+    print("Loading HowToPlay screen with assets:", Menu.assets)
+    HowToPlay.load(Menu.assets)
 end
 
 function Menu.draw()
@@ -114,77 +158,91 @@ function Menu.draw()
         bee:draw()
     end
     
-    -- Draw title with animation
-    love.graphics.setFont(Menu.assets.titleFont)
-    local titleText = "Time is Honey"
-    local titleWidth = Menu.assets.titleFont:getWidth(titleText)
-    local titleHeight = Menu.assets.titleFont:getHeight()
-    
-    -- Draw title shadow
-    love.graphics.setColor(0, 0, 0, 0.5)
-    love.graphics.print(titleText, love.graphics.getWidth()/2 - titleWidth/2 + 4, love.graphics.getHeight()/3 - titleHeight/2 + Menu.titleOffset + 4)
-    
-    -- Draw title with honey color
-    love.graphics.setColor(1, 0.8, 0.2) -- Honey gold color
-    love.graphics.setFont(Menu.assets.titleFont)
-    love.graphics.printf(titleText, love.graphics.getWidth()/2 - titleWidth/2, love.graphics.getHeight()/3 - titleHeight/2 + Menu.titleOffset, titleWidth, "center")
-    
-    -- Draw buttons
-    local buttonWidth = 200
-    local buttonHeight = 60
-    local centerX = love.graphics.getWidth()/2 - buttonWidth/2
-    
-    for buttonId, button in pairs(Menu.buttons) do
-        local buttonY = love.graphics.getHeight()/2 + button.y
-        local isHovering = Menu.selectedButton == buttonId
-        local hoverTime = Menu.buttonHoverTimes[buttonId] or 0
+    -- Draw the appropriate screen content
+    if Menu.currentState == "menu" then
+        print("Drawing menu state")
+        -- Draw title with animation
+        love.graphics.setFont(Menu.assets.titleFont)
+        local titleText = "Time is Honey"
+        local titleWidth = Menu.assets.titleFont:getWidth(titleText)
+        local titleHeight = Menu.assets.titleFont:getHeight()
         
-        -- Draw button glow when hovering
-        if isHovering then
-            local glowAlpha = 0.3 + math.sin(hoverTime * 5) * 0.2
-            love.graphics.setColor(button.colors.glow[1], button.colors.glow[2], button.colors.glow[3], glowAlpha)
-            love.graphics.rectangle("fill", 
-                centerX - 10,
-                buttonY - 10,
-                buttonWidth + 20,
-                buttonHeight + 20,
-                15, 15
-            )
+        -- Draw title shadow
+        love.graphics.setColor(0, 0, 0, 0.5)
+        love.graphics.print(titleText, love.graphics.getWidth()/2 - titleWidth/2 + 4, love.graphics.getHeight()/3 - titleHeight/2 + Menu.titleOffset + 4)
+        
+        -- Draw title with honey color
+        love.graphics.setColor(1, 0.8, 0.2) -- Honey gold color
+        love.graphics.setFont(Menu.assets.titleFont)
+        love.graphics.printf(titleText, love.graphics.getWidth()/2 - titleWidth/2, love.graphics.getHeight()/3 - titleHeight/2 + Menu.titleOffset, titleWidth, "center")
+        
+        -- Draw menu buttons
+        local buttonWidth = 200
+        local buttonHeight = 60
+        local centerX = love.graphics.getWidth()/2 - buttonWidth/2
+        
+        for buttonId, button in pairs(Menu.buttons) do
+            if buttonId ~= "backToMenu" then -- Don't draw back button on main menu
+                local buttonY = love.graphics.getHeight()/2 + button.y
+                local isHovering = Menu.selectedButton == buttonId
+                local hoverTime = Menu.buttonHoverTimes[buttonId] or 0
+                
+                -- Draw button glow when hovering
+                if isHovering then
+                    local glowAlpha = 0.3 + math.sin(hoverTime * 5) * 0.2
+                    love.graphics.setColor(button.colors.glow[1], button.colors.glow[2], button.colors.glow[3], glowAlpha)
+                    love.graphics.rectangle("fill", 
+                        centerX - 10,
+                        buttonY - 10,
+                        buttonWidth + 20,
+                        buttonHeight + 20,
+                        15, 15
+                    )
+                end
+                
+                -- Calculate squash and stretch effect
+                local scaleX, scaleY = 1, 1
+                if isHovering and hoverTime < 0.3 then -- Only animate for first 0.3 seconds
+                    -- Create a bouncy squash and stretch effect
+                    local progress = hoverTime / 0.3 -- Normalize to 0-1
+                    local bounce = math.sin(progress * math.pi) * 0.1 -- One complete bounce
+                    scaleX = 1 + bounce
+                    scaleY = 1 - bounce * 0.5 -- Squash vertically while stretching horizontally
+                end
+                
+                -- Draw button background with squash and stretch effect
+                local buttonColor = isHovering and button.colors.hover or button.colors.normal
+                love.graphics.setColor(buttonColor)
+                
+                -- Calculate new dimensions and position for squash and stretch
+                local newWidth = buttonWidth * scaleX
+                local newHeight = buttonHeight * scaleY
+                local newX = centerX - (newWidth - buttonWidth) / 2
+                local newY = buttonY - (newHeight - buttonHeight) / 2
+                
+                love.graphics.rectangle("fill", 
+                    newX,
+                    newY,
+                    newWidth,
+                    newHeight,
+                    10, 10
+                )
+                
+                -- Draw button text with enhanced hover effect
+                love.graphics.setFont(Menu.assets.buttonFont)
+                local textColor = isHovering and button.colors.textHover or button.colors.text
+                love.graphics.setColor(textColor)
+                love.graphics.printf(button.text, newX, newY + newHeight/2 - Menu.assets.buttonFont:getHeight()/2, newWidth, "center")
+            end
         end
+    elseif Menu.currentState == "howToPlay" then
+        print("Drawing howToPlay state")
+        -- Draw a semi-transparent background for better readability
+        love.graphics.setColor(0, 0, 0, 0.7)
+        love.graphics.rectangle("fill", 0, 0, love.graphics.getWidth(), love.graphics.getHeight())
         
-        -- Calculate squash and stretch effect
-        local scaleX, scaleY = 1, 1
-        if isHovering and hoverTime < 0.3 then -- Only animate for first 0.3 seconds
-            -- Create a bouncy squash and stretch effect
-            local progress = hoverTime / 0.3 -- Normalize to 0-1
-            local bounce = math.sin(progress * math.pi) * 0.1 -- One complete bounce
-            scaleX = 1 + bounce
-            scaleY = 1 - bounce * 0.5 -- Squash vertically while stretching horizontally
-        end
-        
-        -- Draw button background with squash and stretch effect
-        local buttonColor = isHovering and button.colors.hover or button.colors.normal
-        love.graphics.setColor(buttonColor)
-        
-        -- Calculate new dimensions and position for squash and stretch
-        local newWidth = buttonWidth * scaleX
-        local newHeight = buttonHeight * scaleY
-        local newX = centerX - (newWidth - buttonWidth) / 2
-        local newY = buttonY - (newHeight - buttonHeight) / 2
-        
-        love.graphics.rectangle("fill", 
-            newX,
-            newY,
-            newWidth,
-            newHeight,
-            10, 10
-        )
-        
-        -- Draw button text with enhanced hover effect
-        love.graphics.setFont(Menu.assets.buttonFont)
-        local textColor = isHovering and button.colors.textHover or button.colors.text
-        love.graphics.setColor(textColor)
-        love.graphics.printf(button.text, newX, newY + newHeight/2 - Menu.assets.buttonFont:getHeight()/2, newWidth, "center")
+        -- Draw the How to Play content
+        HowToPlay.draw()
     end
     
     -- Draw transition overlay
@@ -214,35 +272,51 @@ function Menu.update(dt)
         if particle.y > love.graphics.getHeight() + particle.size then particle.y = -particle.size end
     end
     
-    -- Update button hover states
-    local buttonWidth = 200
-    local buttonHeight = 60
-    local centerX = love.graphics.getWidth()/2 - buttonWidth/2
-    local mouseX, mouseY = love.mouse.getPosition()
-    local wasHovering = Menu.selectedButton ~= nil
-    Menu.selectedButton = nil
-    
-    -- Update hover times for all buttons
-    for buttonId, button in pairs(Menu.buttons) do
-        local buttonY = love.graphics.getHeight()/2 + button.y
-        if mouseX >= centerX and mouseX <= centerX + buttonWidth and
-           mouseY >= buttonY and mouseY <= buttonY + buttonHeight then
-            Menu.selectedButton = buttonId
-            if not Menu.buttonHoverStates[buttonId] then
-                -- Reset hover time when first hovering
-                Menu.buttonHoverTimes[buttonId] = 0
-                Menu.buttonHoverStates[buttonId] = true
+    if Menu.currentState == "menu" then
+        -- Update button hover states
+        local buttonWidth = 200
+        local buttonHeight = 60
+        local centerX = love.graphics.getWidth()/2 - buttonWidth/2
+        local mouseX, mouseY = love.mouse.getPosition()
+        local wasHovering = Menu.selectedButton ~= nil
+        Menu.selectedButton = nil
+        
+        -- Update hover times for all buttons
+        for buttonId, button in pairs(Menu.buttons) do
+            -- Skip buttons that shouldn't be shown in current state
+            if (Menu.currentState == "menu" and buttonId == "backToMenu") or
+               (Menu.currentState == "howToPlay" and buttonId ~= "backToMenu") then
+                goto continue
             end
-            Menu.buttonHoverTimes[buttonId] = Menu.buttonHoverTimes[buttonId] + dt
-        else
-            Menu.buttonHoverStates[buttonId] = false
-            Menu.buttonHoverTimes[buttonId] = 0
+            
+            local buttonY = love.graphics.getHeight()/2 + button.y
+            if mouseX >= centerX and mouseX <= centerX + buttonWidth and
+               mouseY >= buttonY and mouseY <= buttonY + buttonHeight then
+                Menu.selectedButton = buttonId
+                if not Menu.buttonHoverStates[buttonId] then
+                    Menu.buttonHoverTimes[buttonId] = 0
+                    Menu.buttonHoverStates[buttonId] = true
+                end
+                Menu.buttonHoverTimes[buttonId] = Menu.buttonHoverTimes[buttonId] + dt
+            else
+                Menu.buttonHoverStates[buttonId] = false
+                Menu.buttonHoverTimes[buttonId] = 0
+            end
+            
+            ::continue::
         end
-    end
-    
-    -- Play hover sound when mouse enters any button
-    if Menu.selectedButton and not wasHovering then
-        SFX.play("uiHover")
+        
+        -- Play hover sound when mouse enters any button
+        if Menu.selectedButton and not wasHovering then
+            SFX.play("uiHover")
+        end
+    elseif Menu.currentState == "howToPlay" then
+        print("Updating howToPlay state")
+        local newState = HowToPlay.update(dt)
+        if newState then
+            print("HowToPlay returned new state:", newState)
+            Menu.currentState = newState
+        end
     end
     
     -- Update bees
@@ -262,26 +336,42 @@ function Menu.update(dt)
         end
     end
     
-    -- Update transition
-    Transition.update(dt)
+    -- Update transition and handle state changes
+    local newState = Transition.update(dt)
+    if newState then
+        print("Transition returned new state:", newState)
+        Menu.currentState = newState
+    end
     
     return false
 end
 
 function Menu.handleClick(x, y, button)
     if button == 1 then -- Left click
-        local buttonWidth = 200
-        local buttonHeight = 60
-        local centerX = love.graphics.getWidth()/2 - buttonWidth/2
-        
-        for buttonId, menuButton in pairs(Menu.buttons) do
-            local buttonY = love.graphics.getHeight()/2 + menuButton.y
-            if x >= centerX and x <= centerX + buttonWidth and
-               y >= buttonY and y <= buttonY + buttonHeight then
-                -- Play click sound
-                SFX.play("uiClick")
-                return menuButton.action()
+        if Menu.currentState == "menu" then
+            local buttonWidth = 200
+            local buttonHeight = 60
+            local centerX = love.graphics.getWidth()/2 - buttonWidth/2
+            
+            for buttonId, menuButton in pairs(Menu.buttons) do
+                -- Skip buttons that shouldn't be shown in current state
+                if (Menu.currentState == "menu" and buttonId == "backToMenu") or
+                   (Menu.currentState == "howToPlay" and buttonId ~= "backToMenu") then
+                    goto continue
+                end
+                
+                local buttonY = love.graphics.getHeight()/2 + menuButton.y
+                if x >= centerX and x <= centerX + buttonWidth and
+                   y >= buttonY and y <= buttonY + buttonHeight then
+                    -- Play click sound
+                    SFX.play("uiClick")
+                    return menuButton.action()
+                end
+                
+                ::continue::
             end
+        elseif Menu.currentState == "howToPlay" then
+            return HowToPlay.handleClick(x, y, button)
         end
     end
     return false

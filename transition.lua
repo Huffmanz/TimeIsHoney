@@ -1,44 +1,41 @@
 local Transition = {
-    currentState = "idle", -- idle, transitioning
-    alpha = 0,
-    duration = 0.5, -- seconds
-    time = 0,
+    active = false,
+    progress = 0,
+    duration = 0,
     onComplete = nil
 }
 
 function Transition.start(duration, onComplete)
-    Transition.currentState = "transitioning"
-    Transition.time = 0
-    Transition.alpha = 0
-    Transition.duration = duration or 0.5
+    Transition.active = true
+    Transition.progress = 0
+    Transition.duration = duration
     Transition.onComplete = onComplete
 end
 
-function Transition.draw()
-    if Transition.currentState == "transitioning" then
-        love.graphics.setColor(0, 0, 0, Transition.alpha)
-        love.graphics.rectangle("fill", 0, 0, love.graphics.getWidth(), love.graphics.getHeight())
-    end
-end
-
 function Transition.update(dt)
-    if Transition.currentState == "transitioning" then
-        Transition.time = Transition.time + dt
-        Transition.alpha = Transition.time / Transition.duration
-        
-        if Transition.time >= Transition.duration then
-            Transition.currentState = "idle"
+    if Transition.active then
+        Transition.progress = Transition.progress + dt
+        if Transition.progress >= Transition.duration then
+            Transition.active = false
             if Transition.onComplete then
-                Transition.onComplete()
+                local result = Transition.onComplete()
+                return result
             end
-            return true -- Signal that transition is complete
         end
     end
     return false
 end
 
+function Transition.draw()
+    if Transition.active then
+        local alpha = Transition.progress / Transition.duration
+        love.graphics.setColor(0, 0, 0, alpha)
+        love.graphics.rectangle("fill", 0, 0, love.graphics.getWidth(), love.graphics.getHeight())
+    end
+end
+
 function Transition.isTransitioning()
-    return Transition.currentState == "transitioning"
+    return Transition.active
 end
 
 return Transition 
