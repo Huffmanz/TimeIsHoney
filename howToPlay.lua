@@ -123,6 +123,17 @@ function HowToPlay.draw()
         10, 10
     )
     
+    -- Draw black border
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line",
+        newX,
+        newY,
+        newWidth,
+        newHeight,
+        10, 10
+    )
+    
     -- Draw button text
     love.graphics.setFont(HowToPlay.assets.buttonFont)
     local textColor = isHovering and button.colors.textHover or button.colors.text
