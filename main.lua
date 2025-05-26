@@ -1,6 +1,6 @@
 -- Game state
 local gameState = {
-    currentState = "menu", -- menu, playing
+    currentState = "splash", -- splash, menu, playing
     gameTime = 300, -- 5 minutes in seconds
     remainingTime = 300,
     selectedNode = nil,
@@ -79,6 +79,7 @@ local Bee = require("bee")
 local Menu = require("menu")
 local Transition = require("transition")
 local GameOver = require("gameover")
+local Splash = require("splash")
 
 -- Initialize game objects
 local nodes = {}
@@ -283,6 +284,9 @@ function love.load()
     -- Set default font
     love.graphics.setFont(gameState.fonts.medium)
     
+    -- Initialize splash screen
+    Splash.load()
+    
     -- Initialize menu
     Menu.load()
     
@@ -418,7 +422,12 @@ function initializeGame()
 end
 
 function love.update(dt)
-    if gameState.currentState == "menu" then
+    if gameState.currentState == "splash" then
+        if Splash.update(dt) then
+            print("Switching from splash to menu") -- Debug print
+            gameState.currentState = "menu"
+        end
+    elseif gameState.currentState == "menu" then
         -- Menu state updates
         if Menu.update(dt) then
             gameState.currentState = "playing"
@@ -438,7 +447,9 @@ function love.update(dt)
 end
 
 function love.draw()
-    if gameState.currentState == "menu" or Transition.isTransitioning() then
+    if gameState.currentState == "splash" then
+        Splash.draw()
+    elseif gameState.currentState == "menu" then
         Menu.draw()
     elseif gameState.currentState == "playing" then
         -- Apply screen shake before camera transformation
