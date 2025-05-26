@@ -41,6 +41,20 @@ local buttonColors = {
         text = {1, 1, 1},
         textHover = {1, 0.3, 0.3},
         glow = {1, 0.3, 0.3}
+    },
+    start = {
+        normal = {0.96, 0.95, 0.29, 0.8}, -- #F5F149 with alpha
+        hover = {1, 0.97, 0.35, 0.9},     -- Slightly brighter
+        text = {0.2, 0.2, 0.2},           -- Dark text
+        textHover = {0.1, 0.1, 0.1},      -- Darker text on hover
+        glow = {0.96, 0.95, 0.29}         -- Same as normal color
+    },
+    howToPlay = {
+        normal = {0.97, 0.73, 0.06, 0.8}, -- #F7B910 with alpha
+        hover = {1, 0.8, 0.1, 0.9},      -- Slightly brighter
+        text = {0.2, 0.2, 0.2},          -- Dark text
+        textHover = {0.1, 0.1, 0.1},     -- Darker text on hover
+        glow = {0.97, 0.73, 0.06}        -- Same as normal color
     }
 }
 
@@ -55,7 +69,7 @@ Menu.buttons = {
             end)
             return "playing"
         end,
-        colors = buttonColors.normal
+        colors = buttonColors.start
     },
     howToPlay = {
         text = "How to Play",
@@ -66,7 +80,7 @@ Menu.buttons = {
             end)
             return false
         end,
-        colors = buttonColors.normal
+        colors = buttonColors.howToPlay
     },
     quit = {
         text = "Quit",
@@ -105,7 +119,7 @@ function Menu.load()
     end
     
     -- Load fonts
-    Menu.assets.titleFont = love.graphics.newFont("assets/KenneyPixel.ttf", 72)
+    Menu.assets.titleFont = love.graphics.newFont("assets/KenneyPixel.ttf", 96)
     Menu.assets.subtitleFont = love.graphics.newFont("assets/KenneyPixel.ttf", 48)
     Menu.assets.buttonFont = love.graphics.newFont("assets/KenneyPixel.ttf", 32)
     
@@ -167,14 +181,29 @@ function Menu.draw()
         local titleWidth = Menu.assets.titleFont:getWidth(titleText)
         local titleHeight = Menu.assets.titleFont:getHeight()
         
-        -- Draw title shadow
-        love.graphics.setColor(0, 0, 0, 0.5)
-        love.graphics.print(titleText, love.graphics.getWidth()/2 - titleWidth/2 + 4, love.graphics.getHeight()/3 - titleHeight/2 + Menu.titleOffset + 4)
+        -- Draw title border (by drawing the text multiple times with offsets)
+        love.graphics.setColor(0, 0, 0, 1)
+        local borderOffsets = {
+            {-2, -2}, {2, -2}, {-2, 2}, {2, 2},  -- Corners
+            {-2, 0}, {2, 0}, {0, -2}, {0, 2}     -- Sides
+        }
+        for _, offset in ipairs(borderOffsets) do
+            love.graphics.printf(titleText, 
+                love.graphics.getWidth()/2 - titleWidth/2 + offset[1], 
+                love.graphics.getHeight()/3 - titleHeight/2 + Menu.titleOffset + offset[2], 
+                titleWidth, 
+                "center"
+            )
+        end
         
         -- Draw title with honey color
         love.graphics.setColor(1, 0.8, 0.2) -- Honey gold color
-        love.graphics.setFont(Menu.assets.titleFont)
-        love.graphics.printf(titleText, love.graphics.getWidth()/2 - titleWidth/2, love.graphics.getHeight()/3 - titleHeight/2 + Menu.titleOffset, titleWidth, "center")
+        love.graphics.printf(titleText, 
+            love.graphics.getWidth()/2 - titleWidth/2, 
+            love.graphics.getHeight()/3 - titleHeight/2 + Menu.titleOffset, 
+            titleWidth, 
+            "center"
+        )
         
         -- Draw menu buttons
         local buttonWidth = 200
@@ -221,6 +250,17 @@ function Menu.draw()
                 local newY = buttonY - (newHeight - buttonHeight) / 2
                 
                 love.graphics.rectangle("fill", 
+                    newX,
+                    newY,
+                    newWidth,
+                    newHeight,
+                    10, 10
+                )
+                
+                -- Draw black border
+                love.graphics.setColor(0, 0, 0, 1)
+                love.graphics.setLineWidth(2)
+                love.graphics.rectangle("line",
                     newX,
                     newY,
                     newWidth,

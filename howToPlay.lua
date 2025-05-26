@@ -17,11 +17,11 @@ local HowToPlay = {
                 return false
             end,
             colors = {
-                normal = {0.2, 0.2, 0.2, 0.8},
-                hover = {0.3, 0.3, 0.3, 0.9},
-                text = {1, 1, 1},
-                textHover = {1, 0.8, 0.2},
-                glow = {1, 0.8, 0.2}
+                normal = {0.97, 0.73, 0.06, 0.8}, -- #F7B910 with alpha
+                hover = {1, 0.8, 0.1, 0.9},      -- Slightly brighter
+                text = {0.2, 0.2, 0.2},          -- Dark text
+                textHover = {0.1, 0.1, 0.1},     -- Darker text on hover
+                glow = {0.97, 0.73, 0.06}        -- Same as normal color
             }
         }
     }
