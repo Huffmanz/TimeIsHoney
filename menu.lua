@@ -324,26 +324,22 @@ function Menu.update(dt)
         -- Update hover times for all buttons
         for buttonId, button in pairs(Menu.buttons) do
             -- Skip buttons that shouldn't be shown in current state
-            if (Menu.currentState == "menu" and buttonId == "backToMenu") or
-               (Menu.currentState == "howToPlay" and buttonId ~= "backToMenu") then
-                goto continue
-            end
-            
-            local buttonY = love.graphics.getHeight()/2 + button.y
-            if mouseX >= centerX and mouseX <= centerX + buttonWidth and
-               mouseY >= buttonY and mouseY <= buttonY + buttonHeight then
-                Menu.selectedButton = buttonId
-                if not Menu.buttonHoverStates[buttonId] then
+            if not ((Menu.currentState == "menu" and buttonId == "backToMenu") or
+                   (Menu.currentState == "howToPlay" and buttonId ~= "backToMenu")) then
+                local buttonY = love.graphics.getHeight()/2 + button.y
+                if mouseX >= centerX and mouseX <= centerX + buttonWidth and
+                   mouseY >= buttonY and mouseY <= buttonY + buttonHeight then
+                    Menu.selectedButton = buttonId
+                    if not Menu.buttonHoverStates[buttonId] then
+                        Menu.buttonHoverTimes[buttonId] = 0
+                        Menu.buttonHoverStates[buttonId] = true
+                    end
+                    Menu.buttonHoverTimes[buttonId] = Menu.buttonHoverTimes[buttonId] + dt
+                else
+                    Menu.buttonHoverStates[buttonId] = false
                     Menu.buttonHoverTimes[buttonId] = 0
-                    Menu.buttonHoverStates[buttonId] = true
                 end
-                Menu.buttonHoverTimes[buttonId] = Menu.buttonHoverTimes[buttonId] + dt
-            else
-                Menu.buttonHoverStates[buttonId] = false
-                Menu.buttonHoverTimes[buttonId] = 0
             end
-            
-            ::continue::
         end
         
         -- Play hover sound when mouse enters any button
@@ -395,20 +391,16 @@ function Menu.handleClick(x, y, button)
             
             for buttonId, menuButton in pairs(Menu.buttons) do
                 -- Skip buttons that shouldn't be shown in current state
-                if (Menu.currentState == "menu" and buttonId == "backToMenu") or
-                   (Menu.currentState == "howToPlay" and buttonId ~= "backToMenu") then
-                    goto continue
+                if not ((Menu.currentState == "menu" and buttonId == "backToMenu") or
+                       (Menu.currentState == "howToPlay" and buttonId ~= "backToMenu")) then
+                    local buttonY = love.graphics.getHeight()/2 + menuButton.y
+                    if x >= centerX and x <= centerX + buttonWidth and
+                       y >= buttonY and y <= buttonY + buttonHeight then
+                        -- Play click sound
+                        SFX.play("uiClick")
+                        return menuButton.action()
+                    end
                 end
-                
-                local buttonY = love.graphics.getHeight()/2 + menuButton.y
-                if x >= centerX and x <= centerX + buttonWidth and
-                   y >= buttonY and y <= buttonY + buttonHeight then
-                    -- Play click sound
-                    SFX.play("uiClick")
-                    return menuButton.action()
-                end
-                
-                ::continue::
             end
         elseif Menu.currentState == "howToPlay" then
             return HowToPlay.handleClick(x, y, button)
