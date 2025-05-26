@@ -14,7 +14,10 @@ local Menu = {
     selectedButton = nil,
     buttonHoverTime = 0,
     totalTime = 0,  -- Add total time tracking
-    isHovering = false  -- Store hover state
+    isHovering = false,  -- Store hover state
+    honeyParticles = {}, -- Add honey particles
+    glowIntensity = 0,  -- Add glow intensity
+    glowDirection = 1   -- Add glow direction
 }
 
 function Menu.load()
@@ -35,9 +38,34 @@ function Menu.load()
             table.insert(Menu.bees, bee)
         end
     end
+    
+    -- Initialize honey particles
+    for i = 1, 50 do
+        table.insert(Menu.honeyParticles, {
+            x = love.math.random(0, love.graphics.getWidth()),
+            y = love.math.random(0, love.graphics.getHeight()),
+            size = love.math.random(4, 8),
+            speed = love.math.random(20, 40),
+            angle = love.math.random() * math.pi * 2,
+            alpha = love.math.random(0.3, 0.7),
+            rotation = love.math.random() * math.pi * 2,
+            rotationSpeed = (love.math.random() - 0.5) * 2
+        })
+    end
 end
 
 function Menu.draw()
+    -- Draw honey background
+    love.graphics.setColor(0.95, 0.9, 0.7, 0.3)
+    for _, particle in ipairs(Menu.honeyParticles) do
+        love.graphics.push()
+        love.graphics.translate(particle.x, particle.y)
+        love.graphics.rotate(particle.rotation)
+        love.graphics.setColor(1, 0.8, 0.2, particle.alpha)
+        love.graphics.rectangle("fill", -particle.size/2, -particle.size/2, particle.size, particle.size)
+        love.graphics.pop()
+    end
+    
     -- Draw background bees
     for _, bee in ipairs(Menu.bees) do
         bee:draw()
@@ -58,16 +86,30 @@ function Menu.draw()
     love.graphics.setFont(Menu.assets.titleFont)
     love.graphics.printf(titleText, love.graphics.getWidth()/2 - titleWidth/2, love.graphics.getHeight()/3 - titleHeight/2 + Menu.titleOffset, titleWidth, "center")
     
-    -- Draw start button with hover effect
+    -- Draw start button with enhanced hover effect
     local buttonText = "Start Game"
     local buttonWidth = 200
     local buttonHeight = 60
     local buttonX = love.graphics.getWidth()/2 - buttonWidth/2
     local buttonY = love.graphics.getHeight()/2 + 50
     
-    -- Draw button background with hover effect
+    -- Draw button glow when hovering
+    if Menu.isHovering then
+        local glowAlpha = 0.3 + math.sin(Menu.buttonHoverTime * 5) * 0.2
+        love.graphics.setColor(1, 0.8, 0.2, glowAlpha)
+        love.graphics.rectangle("fill", 
+            buttonX - 10,
+            buttonY - 10,
+            buttonWidth + 20,
+            buttonHeight + 20,
+            15, 15
+        )
+    end
+    
+    -- Draw button background with enhanced hover effect
     local hoverScale = 1 + math.sin(Menu.buttonHoverTime * 5) * 0.05
-    love.graphics.setColor(0.2, 0.2, 0.2, 0.8)
+    local buttonColor = Menu.isHovering and {0.3, 0.3, 0.3, 0.9} or {0.2, 0.2, 0.2, 0.8}
+    love.graphics.setColor(buttonColor)
     love.graphics.rectangle("fill", 
         buttonX - (buttonWidth * (hoverScale - 1))/2,
         buttonY - (buttonHeight * (hoverScale - 1))/2,
@@ -76,9 +118,10 @@ function Menu.draw()
         10, 10
     )
     
-    -- Draw button text
+    -- Draw button text with enhanced hover effect
     love.graphics.setFont(Menu.assets.buttonFont)
-    love.graphics.setColor(1, 1, 1)
+    local textColor = Menu.isHovering and {1, 0.8, 0.2} or {1, 1, 1}
+    love.graphics.setColor(textColor)
     love.graphics.printf(buttonText, buttonX, buttonY + buttonHeight/2 - Menu.assets.buttonFont:getHeight()/2, buttonWidth, "center")
     
     -- Draw transition overlay
@@ -88,6 +131,25 @@ end
 function Menu.update(dt)
     -- Update total time
     Menu.totalTime = Menu.totalTime + dt
+    
+    -- Update title animation (slower movement)
+    Menu.titleOffset = Menu.titleOffset + Menu.titleDirection * 10 * dt
+    if math.abs(Menu.titleOffset) > 3 then
+        Menu.titleDirection = -Menu.titleDirection
+    end
+    
+    -- Update honey particles
+    for _, particle in ipairs(Menu.honeyParticles) do
+        particle.x = particle.x + math.cos(particle.angle) * particle.speed * dt
+        particle.y = particle.y + math.sin(particle.angle) * particle.speed * dt
+        particle.rotation = particle.rotation + particle.rotationSpeed * dt
+        
+        -- Wrap particles around screen
+        if particle.x < -particle.size then particle.x = love.graphics.getWidth() + particle.size end
+        if particle.x > love.graphics.getWidth() + particle.size then particle.x = -particle.size end
+        if particle.y < -particle.size then particle.y = love.graphics.getHeight() + particle.size end
+        if particle.y > love.graphics.getHeight() + particle.size then particle.y = -particle.size end
+    end
     
     -- Update button hover state
     local buttonWidth = 200
@@ -123,12 +185,6 @@ function Menu.update(dt)
                 table.insert(Menu.bees, newBee)
             end
         end
-    end
-    
-    -- Update title animation
-    Menu.titleOffset = Menu.titleOffset + Menu.titleDirection * 30 * dt
-    if math.abs(Menu.titleOffset) > 5 then
-        Menu.titleDirection = -Menu.titleDirection
     end
     
     -- Update transition
